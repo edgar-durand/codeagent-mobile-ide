@@ -30,6 +30,10 @@ interface Props {
   saved: Record<string, string>;
   setSaved: (next: (prev: Record<string, string>) => Record<string, string>) => void;
   onClose?: () => void;
+  /** Fires after a successful write. Consumers typically use this
+   * to refresh the SourceControl status (so the just-saved file
+   * appears in the changes list without a manual refresh). */
+  onAfterSave?: (path: string) => void;
 }
 
 function buildEditorHtml(initial: string, language: string, settings: EditorSettingsSnapshot) {
@@ -105,6 +109,7 @@ export function InlineEditor({
   saved,
   setSaved,
   onClose,
+  onAfterSave,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -234,6 +239,7 @@ export function InlineEditor({
       setSaved((prev) => ({ ...prev, [path]: content }));
       setSavedFlash(Date.now());
       setTimeout(() => setSavedFlash(null), 2500);
+      onAfterSave?.(path);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed.');
     } finally {

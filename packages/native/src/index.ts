@@ -27,3 +27,4 @@ export { InlineEditor } from './components/InlineEditor';
 export { Breadcrumbs } from './components/Breadcrumbs';
 export { DiffViewer } from './components/DiffViewer';
 export { TerminalPanel } from './components/TerminalPanel';
+export { SplitPane } from './components/SplitPane';
