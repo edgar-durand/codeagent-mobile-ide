@@ -6,4 +6,22 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.1.0] — 2026-05-17
+
+### Added
+
+- Initial release of @codeam/ide v0.1.0
+
+### CI
+
+- **workflow:** Force trigger run after migration
+
+### Changed
+
+- **workflow:** Migrate release pipeline from Changesets to tag-triggered git-cliff
+
+### Fixed
+
+- **workflow:** Build core before typecheck + drop stale changeset ignore
+
 ## [Unreleased]
