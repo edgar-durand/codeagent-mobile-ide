@@ -73,10 +73,10 @@ codeagent-mobile-ide/
 │       ├── phase-2-features.md
 │       ├── phase-3-extensions.md
 │       └── phase-4-gtm.md
-├── .changeset/               # Changesets-managed release pipeline
-├── .github/workflows/        # CI + Release
+├── .github/workflows/        # CI + Release (tag-triggered)
 ├── .husky/                   # pre-commit / commit-msg hooks
-├── eslint.config.js          # ESLint v9 flat config (shared by all packages)
+├── cliff.toml                # git-cliff config — Conventional Commits → CHANGELOG sections
+├── eslint.config.mjs         # ESLint v9 flat config (shared by all packages)
 ├── tsconfig.base.json        # shared compiler options
 ├── commitlint.config.mjs     # Conventional Commits with library-specific scopes
 └── package.json              # workspace root
@@ -99,7 +99,7 @@ Each package owns:
 - **Prettier** for formatting. Standard config: 100 col, 2 spaces, single quotes, trailing commas.
 - **`husky` + `lint-staged`** runs ESLint on staged files at commit time.
 - **`commitlint`** enforces Conventional Commits with the scope list in `commitlint.config.mjs`.
-- **`changesets`** for versioning + publishing. All three packages share a fixed version line via the `fixed` config in `.changeset/config.json` — a `vX.Y.Z` release moves all three at once.
+- **`git-cliff`** generates per-package CHANGELOG entries at release time from the Conventional Commits between tags. Same configuration shape as the `codeagent-mobile-clients` repo, so anyone reading either changelog sees an identical format. All three packages share a fixed version line — a single `vX.Y.Z` tag publishes all three.
 
 ---
 
@@ -117,14 +117,18 @@ Runs on every push and PR to `main`:
 
 ### Release (`.github/workflows/release.yml`)
 
-Runs on every push to `main`. Uses the `changesets/action`:
+Triggered by pushing a tag matching `v*.*.*`. Topology:
 
-- If there are pending changesets, opens (or updates) a "Version packages" PR
-- When that PR merges, the next run publishes the bumped packages to npm
+1. `setup` — validates the tag and exposes the version as a job output
+2. `publish-core` — patches `packages/core/package.json` version, builds, publishes to npm
+3. `publish-web` + `publish-native` — run in parallel after core; each patches its own version + the `@codeam/ide-core` dependency pin, builds, publishes
+4. `release` — runs `git-cliff` against the commits between the previous and current tag, prepends the notes to each package's `CHANGELOG.md`, commits back to `main` with `chore(changelog): notes for vX.Y.Z [skip ci]`, and creates a GitHub Release using the same notes
 
 Secrets required (set in GitHub repo settings → Secrets):
 
 - `NPM_TOKEN` — npmjs.com automation token with publish scope on the `@codeam` org
+
+A pre-release tag (`vX.Y.Z-rc.N`) follows the same path but the GitHub Release is marked `prerelease: true`.
 
 ---
 

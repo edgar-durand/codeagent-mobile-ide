@@ -1,14 +1,9 @@
 # Changelog
 
-This file is maintained by [Changesets](https://github.com/changesets/changesets). Do not edit by hand — add a `.md` file in `.changeset/` instead.
+Per-package changelogs are the source of truth:
 
-Per-package changelogs live in `packages/*/CHANGELOG.md`.
+- [`@codeam/ide-core`](./packages/core/CHANGELOG.md)
+- [`@codeam/ide-web`](./packages/web/CHANGELOG.md)
+- [`@codeam/ide-native`](./packages/native/CHANGELOG.md)
 
-## 0.1.0 — initial release
-
-- **`@codeam/ide-core`** — adapter contracts (`FileFetcher`, `GitProvider`, `FileTreeProvider`, `SearchProvider`, `TerminalProvider`, `SettingsStore`), payload types, `detectLanguage` helper
-- **`@codeam/ide-web`** — `FileViewerProvider` + `FileViewerHost` React components, Monaco editor via `@monaco-editor/react`
-- **`@codeam/ide-native`** — `FileViewerProvider` + `FileViewerHost` React Native components, Monaco inside a WebView, safe-area-aware fullscreen modal
-- Monorepo tooling: npm workspaces, tsup, vitest, ESLint v9, Prettier, husky, lint-staged, commitlint, Changesets
-- CI + Release workflows
-- Phase 2/3/4 roadmap published in `docs/roadmap/`
+All three packages share a fixed version line — a single `git tag vX.Y.Z` push triggers a parallel publish of all three. Each package's CHANGELOG is updated automatically by the [Release](./.github/workflows/release.yml) workflow using [`git-cliff`](https://git-cliff.org/) over the Conventional Commits since the previous tag (see [`cliff.toml`](./cliff.toml)). Do not edit them by hand — make better commit messages instead.

@@ -2,44 +2,254 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*.*.*'
+
+# Tag `vX.Y.Z` → publishes `@codeam/ide-core`, `@codeam/ide-web`, and
+# `@codeam/ide-native` to npm under a single version line, then drafts a
+# GitHub Release with git-cliff-generated notes drawn from the conventional
+# commits since the previous tag. Same shape as the codeagent-mobile-clients
+# release workflow so anyone reading either repo's changelog sees an
+# identical structure.
+#
+# Topology: `setup` validates the tag and exposes the version as a job
+# output. `publish-core` runs first because `web` and `native` depend on
+# core at the same version, then `publish-web` and `publish-native` fan
+# out in parallel. The final `release` job runs git-cliff against the
+# commits between the previous and current tag, prepends the notes to
+# each package's CHANGELOG.md, commits that back to main with
+# `[skip ci]`, and creates the GitHub Release with the generated notes.
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
-  release:
-    name: Version + publish (changesets)
+  setup:
+    name: Validate tag and expose version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match vMAJOR.MINOR.PATCH[-prerelease]"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Publishing version: $VERSION"
+
+  publish-core:
+    name: Publish @codeam/ide-core to npm
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: npm
           registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm run build
-      - name: Create release PR or publish
-        id: changesets
-        uses: changesets/action@v1
+
+      - name: Patch package version
+        working-directory: packages/core
+        run: npm version "${{ needs.setup.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Install workspace deps
+        run: npm ci
+
+      - name: Build
+        working-directory: packages/core
+        run: npm run build
+
+      - name: Publish
+        working-directory: packages/core
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-web:
+    name: Publish @codeam/ide-web to npm
+    needs: [setup, publish-core]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          # When changesets are present in `.changeset/` this opens a PR
-          # that bumps versions + updates CHANGELOG. When the merge of
-          # that PR lands on main, the same action re-runs and `publish`
-          # ships the bumped packages to npm.
-          version: npm run version
-          publish: npm run release
-          commit: 'chore(release): version packages'
-          title: 'chore(release): version packages'
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+
+      - name: Patch package versions (web depends on core at the same version)
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          npm --workspace @codeam/ide-core version "$VERSION" --no-git-tag-version --allow-same-version
+          npm --workspace @codeam/ide-web  version "$VERSION" --no-git-tag-version --allow-same-version
+          # Pin the @codeam/ide-core dependency in @codeam/ide-web to the same version.
+          node -e "
+            const fs = require('fs');
+            const p = 'packages/web/package.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            if (j.dependencies && j.dependencies['@codeam/ide-core']) {
+              j.dependencies['@codeam/ide-core'] = '${{ needs.setup.outputs.version }}';
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            }
+          "
+
+      - name: Install workspace deps
+        run: npm ci
+
+      - name: Build core (needed for @codeam/ide-web dts resolution)
+        working-directory: packages/core
+        run: npm run build
+
+      - name: Build web
+        working-directory: packages/web
+        run: npm run build
+
+      - name: Publish
+        working-directory: packages/web
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-native:
+    name: Publish @codeam/ide-native to npm
+    needs: [setup, publish-core]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+
+      - name: Patch package versions (native depends on core at the same version)
+        run: |
+          VERSION="${{ needs.setup.outputs.version }}"
+          npm --workspace @codeam/ide-core   version "$VERSION" --no-git-tag-version --allow-same-version
+          npm --workspace @codeam/ide-native version "$VERSION" --no-git-tag-version --allow-same-version
+          node -e "
+            const fs = require('fs');
+            const p = 'packages/native/package.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            if (j.dependencies && j.dependencies['@codeam/ide-core']) {
+              j.dependencies['@codeam/ide-core'] = '${{ needs.setup.outputs.version }}';
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            }
+          "
+
+      - name: Install workspace deps
+        run: npm ci
+
+      - name: Build core (needed for @codeam/ide-native dts resolution)
+        working-directory: packages/core
+        run: npm run build
+
+      - name: Build native
+        working-directory: packages/native
+        run: npm run build
+
+      - name: Publish
+        working-directory: packages/native
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    name: Draft GitHub Release + commit changelog
+    needs: [setup, publish-core, publish-web, publish-native]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (full history for git-cliff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes (git-cliff)
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --current --strip all
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Prepend notes to per-package CHANGELOGs + commit back to main
+        run: |
+          set -euo pipefail
+
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "git-cliff produced no release notes (no conventional commits between tags). Nothing to commit."
+            exit 0
+          fi
+
+          # The tag checkout has no in-flight version bumps in this job —
+          # those happen in publish-* and aren't pushed. Switch to main
+          # cleanly so the changelog commit lands there.
+          git fetch origin main
+          git checkout main
+
+          for PKG in core web native; do
+            FILE="packages/$PKG/CHANGELOG.md"
+            # Insert the new section right above the first existing "## ["
+            # heading, preserving any prior history. If the file is just
+            # the header (first release), append.
+            awk -v notes_file="RELEASE_NOTES.md" '
+              BEGIN { inserted = 0 }
+              /^## \[/ && !inserted {
+                while ((getline line < notes_file) > 0) print line
+                print ""
+                inserted = 1
+              }
+              { print }
+              END {
+                if (!inserted) {
+                  while ((getline line < notes_file) > 0) print line
+                }
+              }
+            ' "$FILE" > "$FILE.new"
+            mv "$FILE.new" "$FILE"
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/*/CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "Nothing new to add to CHANGELOGs."
+            exit 0
+          fi
+          git commit -m "chore(changelog): notes for v${{ needs.setup.outputs.version }} [skip ci]"
+          git push origin main
+
+      - name: Create GitHub Release
+        if: always() && needs.setup.outputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ needs.setup.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ needs.setup.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

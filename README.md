@@ -45,7 +45,11 @@ The repo is an `npm workspaces` monorepo. Three packages publish to npm under th
 | [`@codeam/ide-web`](./packages/web)       | React (DOM) UI: file viewer (Monaco via `@monaco-editor/react`), and (Phase 2) explorer, source control, search, terminal.           | TBD — Monaco lazy-loaded                 |
 | [`@codeam/ide-native`](./packages/native) | React Native UI: same surfaces, Monaco hosted in a `react-native-webview`.                                                           | TBD — Monaco fetched from CDN at runtime |
 
-All three ship with **independent versioning kept in lockstep** (via Changesets `fixed`), so a single `vX.Y.Z` release moves all packages at once.
+All three ship on **one fixed version line**, identical to the
+[codeagent-mobile-clients](https://github.com/edgar-durand/codeagent-mobile-clients)
+release pipeline: a single `git tag vX.Y.Z` push triggers parallel publishes
+of all three packages to npm, with release notes generated from the
+Conventional Commits between tags.
 
 ---
 
@@ -247,10 +251,14 @@ npm run typecheck
 npm run lint
 npm test
 
-# Release flow (changesets).
-npm run changeset         # add a changeset describing your change
-npm run version           # locally bump versions + write CHANGELOG (CI does this)
-npm run release           # publish to npm (CI does this)
+# Release flow — tag-triggered, same pattern as codeagent-mobile-clients.
+# When the maintainer is ready to cut a release:
+git tag v0.2.0
+git push origin v0.2.0
+# → GitHub Actions builds + publishes @codeam/ide-core, -web, -native
+#   to npm in parallel, then generates release notes from the
+#   conventional commits since the previous tag (git-cliff), prepends
+#   them to each package's CHANGELOG.md, and drafts a GitHub Release.
 ```
 
 A `husky` pre-commit hook runs `lint-staged` against your staged files, plus `commitlint` enforces Conventional Commits with the scope set defined in [`commitlint.config.mjs`](./commitlint.config.mjs).
@@ -298,7 +306,7 @@ Phase 1 ships a single dark theme. Phase 2 adds theme support via JSON files com
 
 ## Contributing
 
-PRs and issues welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development workflow, commit-message rules (Conventional Commits, allowed scopes are listed in `commitlint.config.mjs`), and the release flow (Changesets).
+PRs and issues welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development workflow, commit-message rules (Conventional Commits, allowed scopes are listed in `commitlint.config.mjs`), and the tag-triggered release flow.
 
 Security issues: please email instead of opening a public issue — see [`SECURITY.md`](./SECURITY.md).
 
