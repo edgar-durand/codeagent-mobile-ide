@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.4.1] — 2026-05-17
+
+### Added
+
+- **native:** Phase 2 parity for activity bar, file tree, scm, search, settings, shell, tabs, editor
+
 ## [0.4.0] — 2026-05-17
 
 ### Added
