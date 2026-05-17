@@ -23,3 +23,5 @@ export { SettingsPanel } from './components/SettingsPanel';
 export { TerminalPanel } from './components/TerminalPanel';
 export { TabsBar } from './components/TabsBar';
 export type { EditorTab } from './components/TabsBar';
+export { Breadcrumbs } from './components/Breadcrumbs';
+export { DiffViewer, reconstructOriginal } from './components/DiffViewer';
