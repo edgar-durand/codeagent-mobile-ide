@@ -133,15 +133,18 @@ jobs:
           else
             echo "node_modules/@codeam/ide-core is NOT a symlink"
           fi
-          echo "---"
-          echo "Resolved package.json:"
-          cat "$target/package.json" | head -30
-          echo "---"
-          echo "Resolved dist/index.d.ts (first 30 lines):"
-          head -30 "$target/dist/index.d.ts" 2>&1
-          echo "---"
-          echo "Contains DEFAULT_EDITOR_SETTINGS?"
-          grep -c "DEFAULT_EDITOR_SETTINGS" "$target/dist/index.d.ts" || true
+          echo "--- package.json types/exports ---"
+          node -e "
+            const p = require(process.cwd() + '/$target/package.json');
+            console.log('types:', p.types);
+            console.log('exports:', JSON.stringify(p.exports, null, 2));
+            console.log('main:', p.main);
+            console.log('module:', p.module);
+          "
+          echo "--- last 5 lines of dist/index.d.ts (the export statement) ---"
+          tail -5 "$target/dist/index.d.ts"
+          echo "--- TypeScript --traceResolution for @codeam/ide-core ---"
+          npx tsc --traceResolution --noEmit --project packages/web/tsconfig.json 2>&1 | grep -A1 "ide-core" | head -40 || true
 
       - name: Build web
         working-directory: packages/web
