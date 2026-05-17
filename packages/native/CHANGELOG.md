@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.3.0] — 2026-05-17
+
+### Fixed
+
+- **web:** Search input — switch to flex layout so the lupa always renders
+
 ## [0.2.6] — 2026-05-17
 
 ### Fixed
