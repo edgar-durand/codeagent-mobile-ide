@@ -20,6 +20,7 @@ export type {
   GitStatusPayload,
   GitDiffResult,
   GitCommitOptions,
+  GitLogEntry,
 } from './types/git';
 
 export type {

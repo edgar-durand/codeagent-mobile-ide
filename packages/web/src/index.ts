@@ -14,6 +14,8 @@ export { FileViewerHost } from './components/FileViewerHost';
 export { ActivityBar } from './components/ActivityBar';
 export type { ActivityBarItem } from './components/ActivityBar';
 
+export { IDEShell } from './components/IDEShell';
+
 export { FileTreeSidebar } from './components/FileTreeSidebar';
 export { SourceControlPanel } from './components/SourceControlPanel';
 export { SearchPanel } from './components/SearchPanel';

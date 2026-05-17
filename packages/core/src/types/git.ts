@@ -41,6 +41,20 @@ export interface GitCommitOptions {
   all?: boolean;
 }
 
+export interface GitLogEntry {
+  /** Full commit SHA. */
+  sha: string;
+  /** First line of the commit message. */
+  subject: string;
+  /** Author display name. */
+  author: string;
+  /** Commit timestamp (epoch ms). */
+  timestamp: number;
+  /** Branch / tag refs that point at this commit (e.g. ["main",
+   * "origin/main"]). Empty when none. */
+  refs?: string[];
+}
+
 export interface GitProvider {
   status(): Promise<GitStatusPayload>;
   diff(path: string, staged?: boolean): Promise<GitDiffResult | null>;
@@ -49,4 +63,7 @@ export interface GitProvider {
   commit(options: GitCommitOptions): Promise<{ sha: string } | { error: string }>;
   push(): Promise<{ ok: true } | { error: string }>;
   fetch(): Promise<{ ok: true } | { error: string }>;
+  /** Optional commit-log accessor. When defined, the Source Control
+   * panel renders a Graph section underneath the commit composer. */
+  log?(limit?: number): Promise<GitLogEntry[]>;
 }
