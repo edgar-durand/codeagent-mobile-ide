@@ -1,1 +1,13 @@
+#!/usr/bin/env sh
+# Runs on every commit before it lands:
+#  1. lint-staged → eslint on staged *.{ts,tsx}, prettier on *.{json,md,yml}
+#  2. workspace-wide typecheck (build core for fresh d.ts, then tsc --noEmit
+#     across every workspace) — catches the inter-package type-resolution
+#     issues that bit us in CI when web and native were behind core's
+#     latest exports.
+#
+# Skip in emergencies with `git commit --no-verify`, but the CI gate
+# will refuse the same diff so the bypass only buys you local time.
+set -e
 npx lint-staged
+npm run typecheck --silent

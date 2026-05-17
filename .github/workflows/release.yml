@@ -125,26 +125,16 @@ jobs:
         working-directory: packages/core
         run: npm run build
 
-      - name: Inspect @codeam/ide-core resolution
-        run: |
-          target=node_modules/@codeam/ide-core
-          if [ -L "$target" ]; then
-            echo "node_modules/@codeam/ide-core IS a symlink → $(readlink $target)"
-          else
-            echo "node_modules/@codeam/ide-core is NOT a symlink"
-          fi
-          echo "--- package.json types/exports ---"
-          node -e "
-            const p = require(process.cwd() + '/$target/package.json');
-            console.log('types:', p.types);
-            console.log('exports:', JSON.stringify(p.exports, null, 2));
-            console.log('main:', p.main);
-            console.log('module:', p.module);
-          "
-          echo "--- last 5 lines of dist/index.d.ts (the export statement) ---"
-          tail -5 "$target/dist/index.d.ts"
-          echo "--- TypeScript --traceResolution for @codeam/ide-core ---"
-          npx tsc --traceResolution --noEmit --project packages/web/tsconfig.json 2>&1 | grep -A1 "ide-core" | head -40 || true
+      - name: Purge nested @codeam/ide-core copy
+        # npm install was hoisting a registry copy of @codeam/ide-core
+        # (an OLDER 0.1.0 picked up from the lockfile) into
+        # packages/web/node_modules/@codeam/ide-core ALONGSIDE the
+        # workspace symlink at the root. TypeScript's nearest-node_modules
+        # resolver found the nested 0.1.0 first and ignored the symlinked
+        # 0.2.x — the dts step failed claiming the new exports didn't
+        # exist. Delete the nested directory so resolution falls back to
+        # the workspace symlink at the repo root.
+        run: rm -rf packages/web/node_modules/@codeam
 
       - name: Build web
         working-directory: packages/web
@@ -192,20 +182,12 @@ jobs:
         working-directory: packages/core
         run: npm run build
 
-      - name: Force fresh core dist into node_modules
-        # See the equivalent step in publish-web for the
-        # symlink-vs-copy handling rationale.
-        run: |
-          target=node_modules/@codeam/ide-core
-          if [ -L "$target" ]; then
-            echo "@codeam/ide-core is a workspace symlink — skip mirror"
-          elif [ -d packages/core/dist ]; then
-            rm -rf "$target/dist"
-            cp -R packages/core/dist "$target/dist"
-          else
-            echo "::error::packages/core/dist missing"
-            exit 1
-          fi
+      - name: Purge nested @codeam/ide-core copy
+        # Same root cause as publish-web's equivalent step: npm
+        # hoists a stale registry 0.1.0 into the per-package
+        # node_modules alongside the workspace symlink, and
+        # TypeScript's nearest-folder resolver picks the wrong one.
+        run: rm -rf packages/native/node_modules/@codeam
 
       - name: Build native
         working-directory: packages/native
