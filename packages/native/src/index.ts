@@ -26,3 +26,4 @@ export type { EditorTab } from './components/TabsBar';
 export { InlineEditor } from './components/InlineEditor';
 export { Breadcrumbs } from './components/Breadcrumbs';
 export { DiffViewer } from './components/DiffViewer';
+export { TerminalPanel } from './components/TerminalPanel';

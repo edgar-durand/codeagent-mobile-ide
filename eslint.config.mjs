@@ -54,6 +54,8 @@ export default [
         HTMLTextAreaElement: 'readonly',
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
+        ResizeObserver: 'readonly',
+        StorageEvent: 'readonly',
       },
     },
     plugins: {
