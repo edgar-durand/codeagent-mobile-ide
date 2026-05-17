@@ -77,7 +77,7 @@ export function IDEShell({
   const panelOpen = panelContent !== null;
 
   return (
-    <div className="h-full w-full flex flex-col bg-[#0a0d12] text-gray-100 overflow-hidden">
+    <div className="h-screen w-full flex flex-col bg-[#0a0d12] text-gray-100 overflow-hidden">
       {titleBar ? <div className="shrink-0">{titleBar}</div> : null}
 
       <div className="flex-1 min-h-0 flex relative">
