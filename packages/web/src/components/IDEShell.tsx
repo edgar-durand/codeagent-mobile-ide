@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ActivityBar, type ActivityBarItem } from './ActivityBar';
 
 interface IDEShellProps {
@@ -73,8 +73,35 @@ export function IDEShell({
     else onViewChange(id);
   };
 
-  const panelContent = activeView ? panels[activeView] ?? null : null;
-  const panelOpen = panelContent !== null;
+  // Track every panel that has ever been activated so we can keep
+  // it mounted (with display: none) once the user navigates away.
+  // This is the VS Code behaviour: file tree state, scroll
+  // positions, expanded folders, etc. survive activity-bar
+  // switches. Without this, switching to Search and back wipes
+  // the FileTreeSidebar's internal state and refires the load.
+  const [mounted, setMounted] = useState<Set<string>>(() =>
+    activeView ? new Set([activeView]) : new Set(),
+  );
+  useEffect(() => {
+    if (!activeView) return;
+    setMounted((prev) => {
+      if (prev.has(activeView)) return prev;
+      const next = new Set(prev);
+      next.add(activeView);
+      return next;
+    });
+  }, [activeView]);
+
+  // Stable list of panels we've ever rendered, in the order they
+  // first opened. Sorting by id keeps the DOM order deterministic.
+  const persistentPanels = useMemo(
+    () =>
+      Array.from(mounted)
+        .filter((id) => panels[id] !== undefined)
+        .sort(),
+    [mounted, panels],
+  );
+  const panelOpen = activeView !== null && mounted.has(activeView);
 
   return (
     <div className="h-screen w-full flex flex-col bg-[#0a0d12] text-gray-100 overflow-hidden">
@@ -88,7 +115,11 @@ export function IDEShell({
           bottomItems={activityBottomItems}
         />
 
-        {/* Side panel — inline on desktop, overlay drawer on mobile */}
+        {/* Side panel — inline on desktop, overlay drawer on mobile.
+            We render every panel that has ever been activated and
+            toggle visibility via `display: none` so internal state
+            (scroll, search query, expanded folders, fetched data)
+            survives activity-bar switches — VS Code parity. */}
         {isMobile ? (
           <>
             {panelOpen ? (
@@ -111,17 +142,36 @@ export function IDEShell({
                 visibility: panelOpen ? 'visible' : 'hidden',
               }}
             >
-              {panelContent}
+              {persistentPanels.map((id) => (
+                <div
+                  key={id}
+                  style={{ display: id === activeView ? 'flex' : 'none' }}
+                  className="h-full flex-col"
+                >
+                  {panels[id]}
+                </div>
+              ))}
             </aside>
           </>
-        ) : panelOpen ? (
+        ) : (
           <aside
-            className="border-r border-gray-800/60 flex-shrink-0"
-            style={{ width: sidePanelWidth }}
+            className="border-r border-gray-800/60 flex-shrink-0 overflow-hidden"
+            style={{ width: panelOpen ? sidePanelWidth : 0 }}
           >
-            {panelContent}
+            {persistentPanels.map((id) => (
+              <div
+                key={id}
+                style={{
+                  display: id === activeView ? 'flex' : 'none',
+                  width: sidePanelWidth,
+                }}
+                className="h-full flex-col"
+              >
+                {panels[id]}
+              </div>
+            ))}
           </aside>
-        ) : null}
+        )}
 
         <main className="flex-1 flex flex-col min-w-0">{children}</main>
       </div>
