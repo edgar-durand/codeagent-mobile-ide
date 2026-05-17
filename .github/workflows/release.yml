@@ -125,26 +125,23 @@ jobs:
         working-directory: packages/core
         run: npm run build
 
-      - name: Force fresh core dist into node_modules
-        # When npm install set up @codeam/ide-core as a workspace
-        # symlink, node_modules/@codeam/ide-core IS packages/core
-        # — touching its dist is a no-op (the symlink already
-        # points at the freshly-built dist). When npm hoisted a
-        # registry copy instead (older 0.1.0 still pinned in the
-        # lockfile), we have to mirror the local dist over so
-        # tsup's DTS resolver sees the new exports.
+      - name: Inspect @codeam/ide-core resolution
         run: |
           target=node_modules/@codeam/ide-core
           if [ -L "$target" ]; then
-            echo "@codeam/ide-core is a workspace symlink — skip mirror"
-          elif [ -d packages/core/dist ]; then
-            rm -rf "$target/dist"
-            cp -R packages/core/dist "$target/dist"
-            echo "mirrored packages/core/dist → $target/dist"
+            echo "node_modules/@codeam/ide-core IS a symlink → $(readlink $target)"
           else
-            echo "::error::packages/core/dist missing — Build core step did not produce output"
-            exit 1
+            echo "node_modules/@codeam/ide-core is NOT a symlink"
           fi
+          echo "---"
+          echo "Resolved package.json:"
+          cat "$target/package.json" | head -30
+          echo "---"
+          echo "Resolved dist/index.d.ts (first 30 lines):"
+          head -30 "$target/dist/index.d.ts" 2>&1
+          echo "---"
+          echo "Contains DEFAULT_EDITOR_SETTINGS?"
+          grep -c "DEFAULT_EDITOR_SETTINGS" "$target/dist/index.d.ts" || true
 
       - name: Build web
         working-directory: packages/web
