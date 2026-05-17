@@ -6,6 +6,13 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.7.0] — 2026-05-17
+
+### Added
+
+- **web,native:** Xterm.js terminal panel + recent commands chip + comprehensive docs
+- **web,native:** Split pane + onaftersave + toggle inline-styled
+
 ## [0.6.0] — 2026-05-17
 
 ### Added
