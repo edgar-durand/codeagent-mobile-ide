@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.6.0] — 2026-05-17
+
+### Added
+
+- **web,native:** Xterm.js terminal panel + recent commands chip + comprehensive docs
+
+### Fixed
+
+- **native:** Activity bar icons hidden by parent opacity on some expo-vector-icons builds
+
 ## [0.4.2] — 2026-05-17
 
 ### Added
