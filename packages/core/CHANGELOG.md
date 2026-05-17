@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.4.2] — 2026-05-17
+
+### Added
+
+- **web,native:** Breadcrumbs + side-by-side diff viewer (monaco)
+
+### Fixed
+
+- **native:** Activity bar icons hidden by parent opacity on some expo-vector-icons builds
+
 ## [0.5.0] — 2026-05-17
 
 ### Added
