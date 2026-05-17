@@ -118,14 +118,23 @@ jobs:
       - name: Install workspace deps
         # `npm install` rather than `npm ci` because the patch step
         # bumped versions in package.json but didn't touch the
-        # lockfile — `npm ci` would either reject the mismatch or
-        # silently install the old registry version instead of
-        # symlinking the workspace, breaking the dts step.
+        # lockfile — `npm ci` would reject the mismatch.
         run: npm install --no-audit --no-fund
 
       - name: Build core (needed for @codeam/ide-web dts resolution)
         working-directory: packages/core
         run: npm run build
+
+      - name: Force fresh core dist into node_modules
+        # npm install may have hoisted @codeam/ide-core from the
+        # registry copy (which lags the just-rebuilt local dist
+        # by one release cycle). Mirror the freshly-built local
+        # dist into node_modules so tsup's DTS resolver finds the
+        # right types. See the comment in publish-native for the
+        # equivalent fix on the native package.
+        run: |
+          rm -rf node_modules/@codeam/ide-core/dist
+          cp -R packages/core/dist node_modules/@codeam/ide-core/dist
 
       - name: Build web
         working-directory: packages/web
@@ -172,6 +181,15 @@ jobs:
       - name: Build core (needed for @codeam/ide-native dts resolution)
         working-directory: packages/core
         run: npm run build
+
+      - name: Force fresh core dist into node_modules
+        # Mirror the freshly-built local core dist into node_modules
+        # so tsup's DTS resolver sees the same types the source
+        # tree exports. See the equivalent step in publish-web for
+        # the rationale.
+        run: |
+          rm -rf node_modules/@codeam/ide-core/dist
+          cp -R packages/core/dist node_modules/@codeam/ide-core/dist
 
       - name: Build native
         working-directory: packages/native
