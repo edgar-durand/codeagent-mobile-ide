@@ -126,15 +126,25 @@ jobs:
         run: npm run build
 
       - name: Force fresh core dist into node_modules
-        # npm install may have hoisted @codeam/ide-core from the
-        # registry copy (which lags the just-rebuilt local dist
-        # by one release cycle). Mirror the freshly-built local
-        # dist into node_modules so tsup's DTS resolver finds the
-        # right types. See the comment in publish-native for the
-        # equivalent fix on the native package.
+        # When npm install set up @codeam/ide-core as a workspace
+        # symlink, node_modules/@codeam/ide-core IS packages/core
+        # — touching its dist is a no-op (the symlink already
+        # points at the freshly-built dist). When npm hoisted a
+        # registry copy instead (older 0.1.0 still pinned in the
+        # lockfile), we have to mirror the local dist over so
+        # tsup's DTS resolver sees the new exports.
         run: |
-          rm -rf node_modules/@codeam/ide-core/dist
-          cp -R packages/core/dist node_modules/@codeam/ide-core/dist
+          target=node_modules/@codeam/ide-core
+          if [ -L "$target" ]; then
+            echo "@codeam/ide-core is a workspace symlink — skip mirror"
+          elif [ -d packages/core/dist ]; then
+            rm -rf "$target/dist"
+            cp -R packages/core/dist "$target/dist"
+            echo "mirrored packages/core/dist → $target/dist"
+          else
+            echo "::error::packages/core/dist missing — Build core step did not produce output"
+            exit 1
+          fi
 
       - name: Build web
         working-directory: packages/web
@@ -183,13 +193,19 @@ jobs:
         run: npm run build
 
       - name: Force fresh core dist into node_modules
-        # Mirror the freshly-built local core dist into node_modules
-        # so tsup's DTS resolver sees the same types the source
-        # tree exports. See the equivalent step in publish-web for
-        # the rationale.
+        # See the equivalent step in publish-web for the
+        # symlink-vs-copy handling rationale.
         run: |
-          rm -rf node_modules/@codeam/ide-core/dist
-          cp -R packages/core/dist node_modules/@codeam/ide-core/dist
+          target=node_modules/@codeam/ide-core
+          if [ -L "$target" ]; then
+            echo "@codeam/ide-core is a workspace symlink — skip mirror"
+          elif [ -d packages/core/dist ]; then
+            rm -rf "$target/dist"
+            cp -R packages/core/dist "$target/dist"
+          else
+            echo "::error::packages/core/dist missing"
+            exit 1
+          fi
 
       - name: Build native
         working-directory: packages/native
