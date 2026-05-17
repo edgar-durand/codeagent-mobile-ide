@@ -130,24 +130,29 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
       </div>
 
       <div className="px-3 py-3 border-b border-gray-800/60 flex flex-col gap-2">
-        <div className="relative">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
-            className="w-full bg-gray-900/70 border border-gray-700/60 rounded-md pl-7 pr-2 py-1.5 text-[12px] font-mono text-gray-200 placeholder:text-gray-500 focus:outline-none focus:border-violet-500/50"
-          />
+        {/* Flex row instead of absolute-positioned icon so the lupa
+            renders reliably even when the consumer's Tailwind purge
+            doesn't ship `top-1/2`/`-translate-y-1/2` for our paths. */}
+        <div
+          className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50"
+        >
           <svg
-            className="absolute left-2 top-1/2 -translate-y-1/2"
             width="12"
             height="12"
             viewBox="0 0 16 16"
             fill="#6b7280"
             aria-hidden="true"
+            className="shrink-0"
           >
             <path d="M10.68 11.74A6 6 0 1 1 11.74 10.68L14.53 13.47l-1.06 1.06zM12 7a5 5 0 1 0-10 0 5 5 0 0 0 10 0z" />
           </svg>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+            className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-gray-200 placeholder:text-gray-500 focus:outline-none"
+          />
         </div>
 
         <div className="flex items-center gap-1 text-[11px]">
