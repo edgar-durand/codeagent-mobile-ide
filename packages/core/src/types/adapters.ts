@@ -3,6 +3,7 @@ import type { GitProvider } from './git';
 import type { FileTreeProvider } from './file-tree';
 import type { SearchProvider } from './search';
 import type { TerminalProvider } from './terminal';
+import type { SettingsStore } from './settings';
 
 /**
  * Convenience aggregate the consumer passes to the IDE root component once
@@ -16,4 +17,5 @@ export interface IdeAdapters {
   fileTree?: FileTreeProvider | null;
   search?: SearchProvider | null;
   terminal?: TerminalProvider | null;
+  settings?: SettingsStore | null;
 }

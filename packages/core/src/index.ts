@@ -41,6 +41,12 @@ export type {
   TerminalEvent,
 } from './types/terminal';
 
+export type {
+  SettingsStore,
+  EditorSettingsSnapshot,
+} from './types/settings';
+export { DEFAULT_EDITOR_SETTINGS } from './types/settings';
+
 export type { IdeAdapters } from './types/adapters';
 
 export { detectLanguage, LANGUAGE_BY_EXTENSION } from './language-detection';

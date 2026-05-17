@@ -43,6 +43,17 @@ export default [
         Buffer: 'readonly',
         global: 'readonly',
         __DEV__: 'readonly',
+        // DOM globals used by typed refs in @codeam/ide-web (e.g.
+        // useRef<HTMLPreElement>). The web package targets a DOM
+        // runtime so these are always available at usage time.
+        HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLDivElement: 'readonly',
+        HTMLButtonElement: 'readonly',
+        HTMLPreElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
+        KeyboardEvent: 'readonly',
+        MouseEvent: 'readonly',
       },
     },
     plugins: {
