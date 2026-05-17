@@ -24,3 +24,5 @@ export { SettingsPanel } from './components/SettingsPanel';
 export { TabsBar } from './components/TabsBar';
 export type { EditorTab } from './components/TabsBar';
 export { InlineEditor } from './components/InlineEditor';
+export { Breadcrumbs } from './components/Breadcrumbs';
+export { DiffViewer } from './components/DiffViewer';
