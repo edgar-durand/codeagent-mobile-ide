@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.3.2] — 2026-05-17
+
+### Fixed
+
+- **web:** Ide shell uses h-screen so consumers don't need a height wrapper
+
 ## [0.3.1] — 2026-05-17
 
 ### Added
