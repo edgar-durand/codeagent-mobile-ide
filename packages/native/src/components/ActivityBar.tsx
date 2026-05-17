@@ -40,20 +40,17 @@ export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48
         }}
         style={({ pressed }) => [
           styles.item,
-          isActive && styles.itemActive,
+          // Wrapping the icon in a parent with opacity ≠ 1 hides the
+          // glyph entirely on some @expo/vector-icons builds. Tint
+          // the row background instead so the icon's own color
+          // controls visibility.
+          !isActive && !item.disabled && styles.itemInactiveTint,
+          item.disabled && styles.itemDisabled,
           pressed && !item.disabled && styles.itemPressed,
         ]}
       >
         {isActive ? <View style={styles.accent} /> : null}
-        <View
-          style={[
-            styles.iconWrap,
-            item.disabled && styles.iconDisabled,
-            isActive && styles.iconActive,
-          ]}
-        >
-          {item.icon}
-        </View>
+        <View style={styles.iconWrap}>{item.icon}</View>
         {item.badge !== undefined && item.badge > 0 ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
@@ -94,7 +91,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  itemActive: {},
+  itemInactiveTint: {},
+  itemDisabled: { opacity: 0.3 },
   itemPressed: { backgroundColor: 'rgba(255,255,255,0.04)' },
   accent: {
     position: 'absolute',
@@ -109,10 +107,7 @@ const styles = StyleSheet.create({
     height: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.55,
   },
-  iconActive: { opacity: 1 },
-  iconDisabled: { opacity: 0.2 },
   badge: {
     position: 'absolute',
     top: 8,
