@@ -1,0 +1,64 @@
+{
+  "name": "@codeam/ide-web",
+  "version": "0.1.0",
+  "description": "React (DOM) UI surface of @codeam/ide — Monaco-backed file viewer, file explorer, source control, search and (Phase 3) extension runtime. Drops into any React web app as components; consumers wire their own backend via the @codeam/ide-core adapter contract.",
+  "keywords": [
+    "ide",
+    "react",
+    "web",
+    "vs-code",
+    "monaco",
+    "file-editor",
+    "codeagent"
+  ],
+  "license": "MIT",
+  "author": "Edgar Durand",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edgar-durand/codeagent-mobile-ide.git",
+    "directory": "packages/web"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@codeam/ide-core": "0.1.0",
+    "@monaco-editor/react": "^4.7.0"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  }
+}

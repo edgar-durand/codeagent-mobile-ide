@@ -1,0 +1,50 @@
+{
+  "name": "@codeam/ide-core",
+  "version": "0.1.0",
+  "description": "Headless types, adapter interfaces, and pure helpers shared by @codeam/ide-web and @codeam/ide-native. Zero runtime dependencies on any UI framework — the package any backend implementing the IDE adapter contract can depend on.",
+  "keywords": [
+    "ide",
+    "mobile",
+    "vs-code",
+    "monaco",
+    "file-editor",
+    "extensions",
+    "codeagent"
+  ],
+  "license": "MIT",
+  "author": "Edgar Durand",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edgar-durand/codeagent-mobile-ide.git",
+    "directory": "packages/core"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

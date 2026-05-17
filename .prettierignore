@@ -1,0 +1,7 @@
+**/dist/**
+**/node_modules/**
+**/.changeset/**
+**/CHANGELOG.md
+package-lock.json
+examples/**/build/**
+examples/**/.expo/**

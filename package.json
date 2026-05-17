@@ -1,0 +1,52 @@
+{
+  "name": "codeagent-mobile-ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "@codeam/ide — a VS Code-style IDE component library for mobile and web, designed to be embedded into any app via React Native or React DOM. Includes a file viewer (Monaco-backed), file explorer, source control, search, and an extension runtime spec compatible with VS Code's marketplace.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edgar-durand/codeagent-mobile-ide.git"
+  },
+  "license": "MIT",
+  "author": "Edgar Durand",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "prepare": "husky",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "npm run build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.10",
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint --max-warnings=0",
+    "*.{json,md,yml}": "prettier --write"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
