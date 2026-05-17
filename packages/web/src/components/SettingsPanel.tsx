@@ -160,18 +160,17 @@ function Toggle({
       className="flex items-center justify-between gap-3 text-[12px] text-gray-300 hover:text-gray-100 transition-colors"
     >
       <span>{label}</span>
+      {/* Inline-style transform so the toggle slides reliably even
+          when the consumer's Tailwind purge doesn't ship our
+          translate-x-* classes — bit me before with `top-1/2`. */}
       <span
-        className={[
-          'inline-block w-9 h-5 rounded-full p-0.5 transition-colors',
-          on ? 'bg-violet-500' : 'bg-gray-700',
-        ].join(' ')}
+        className="relative inline-block w-9 h-5 rounded-full transition-colors"
+        style={{ backgroundColor: on ? '#8b5cf6' : '#374151', padding: 2 }}
         aria-hidden="true"
       >
         <span
-          className={[
-            'block w-4 h-4 rounded-full bg-white transition-transform',
-            on ? 'translate-x-4' : 'translate-x-0',
-          ].join(' ')}
+          className="block w-4 h-4 rounded-full bg-white transition-transform"
+          style={{ transform: on ? 'translateX(16px)' : 'translateX(0)' }}
         />
       </span>
     </button>
