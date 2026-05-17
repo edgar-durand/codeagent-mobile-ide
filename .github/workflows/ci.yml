@@ -40,6 +40,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm run typecheck
+      # Build core first so the other packages can resolve `@codeam/ide-core`
+      # types from `dist/` during their own typecheck. The root `typecheck`
+      # script also does this build under the hood, but doing it explicitly
+      # in CI keeps the steps independently runnable.
       - run: npm run build
+      - run: npm run typecheck
       - run: npm test
