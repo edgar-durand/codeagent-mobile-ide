@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.3.3] — 2026-05-17
+
+### Added
+
+- **web:** Ide shell keeps inactive panels mounted (vs code parity)
+
+### Fixed
+
+- **web:** Ide shell uses h-screen so consumers don't need a height wrapper
+
 ## [0.3.2] — 2026-05-17
 
 ### Fixed
