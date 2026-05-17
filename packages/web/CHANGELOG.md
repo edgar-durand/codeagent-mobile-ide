@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.2.6] — 2026-05-17
+
+### Fixed
+
+- **workflow:** Purge nested @codeam copies so tsc resolves the workspace symlink
+
 ## [0.1.0] — 2026-05-17
 
 ### Added
