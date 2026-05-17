@@ -116,7 +116,12 @@ jobs:
           "
 
       - name: Install workspace deps
-        run: npm ci
+        # `npm install` rather than `npm ci` because the patch step
+        # bumped versions in package.json but didn't touch the
+        # lockfile — `npm ci` would either reject the mismatch or
+        # silently install the old registry version instead of
+        # symlinking the workspace, breaking the dts step.
+        run: npm install --no-audit --no-fund
 
       - name: Build core (needed for @codeam/ide-web dts resolution)
         working-directory: packages/core
@@ -161,7 +166,8 @@ jobs:
           "
 
       - name: Install workspace deps
-        run: npm ci
+        # See the equivalent step in publish-web for the rationale.
+        run: npm install --no-audit --no-fund
 
       - name: Build core (needed for @codeam/ide-native dts resolution)
         working-directory: packages/core
