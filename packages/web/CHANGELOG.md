@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.10.0] — 2026-05-18
+
+### Added
+
+- **core,web,native:** Vs code-style themes marketplace browser
+
 ## [0.9.2] — 2026-05-18
 
 ### Added
