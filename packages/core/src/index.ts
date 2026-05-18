@@ -58,7 +58,11 @@ export type {
   VSCodeColorTheme,
   VSCodeTokenColor,
 } from './types/theme';
-export { vscodeThemeToMonaco } from './types/theme';
+export {
+  vscodeThemeToMonaco,
+  parseJsonc,
+  stripJsoncCommentsAndTrailingCommas,
+} from './types/theme';
 
 export type {
   FileIconResolver,

@@ -11,6 +11,7 @@ import {
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_THEME_CHOICES,
   MARKETPLACE_THEMES,
+  parseJsonc,
   vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
   type MarketplaceThemeRef,
@@ -97,7 +98,8 @@ export function SettingsPanel({
         setImportError(`Could not fetch ${ref.name} (HTTP ${res.status}).`);
         return;
       }
-      const raw = (await res.json()) as VSCodeColorTheme;
+      const text = await res.text();
+      const raw = parseJsonc<VSCodeColorTheme>(text);
       const theme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
       const next = [...customThemes.filter((t) => t.name !== theme.name), theme];
       setCustomThemes(next);
@@ -116,7 +118,7 @@ export function SettingsPanel({
       return;
     }
     try {
-      const raw = JSON.parse(trimmed) as VSCodeColorTheme;
+      const raw = parseJsonc<VSCodeColorTheme>(trimmed);
       if (
         (!raw.tokenColors || raw.tokenColors.length === 0) &&
         (!raw.colors || Object.keys(raw.colors).length === 0)

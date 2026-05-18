@@ -92,6 +92,89 @@ export interface VSCodeTokenColor {
  * Returns `undefined` for non-string / empty values so the caller
  * can omit the field rather than emit `''`.
  */
+/**
+ * Strip both styles of comment (line and block) and trailing
+ * commas before `}` / `]` from a JSONC source string so the result
+ * can be passed to `JSON.parse`. VS Code theme JSON files use the
+ * JSONC dialect even though they're served with a `.json`
+ * extension — this is what lets a marketplace theme's published
+ * file start with a comment block describing the palette.
+ *
+ * Aware of:
+ *   - strings: a "// not a comment" or a "block-style" run is left
+ *     alone so it can appear verbatim inside theme `name` fields.
+ *   - escaped quotes inside strings (so a "\"" doesn't exit early).
+ *   - bare LF line endings (CRLF works too — only the `\n` matters
+ *     for terminating a line comment).
+ *
+ * NOT aware of:
+ *   - Unicode line separators U+2028 / U+2029 — bare `\n` is
+ *     close enough for hand-written theme files.
+ *   - Single-quoted strings (JSONC, like JSON, disallows them).
+ *
+ * The parser is intentionally tiny + state-machine driven so it
+ * runs in a single pass with no allocations beyond the output
+ * builder.
+ */
+export function stripJsoncCommentsAndTrailingCommas(src: string): string {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  let inString = false;
+  while (i < n) {
+    const ch = src[i];
+    const next = i + 1 < n ? src[i + 1] : '';
+    if (inString) {
+      out += ch;
+      if (ch === '\\' && i + 1 < n) {
+        // Preserve the escaped char verbatim — important for `\"`
+        // so we don't accidentally exit the string state.
+        out += src[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      // Line comment — skip to newline (or EOF). Don't append.
+      i += 2;
+      while (i < n && src[i] !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      // Block comment — skip to closing `*/` (or EOF).
+      i += 2;
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i += 1;
+      if (i < n) i += 2; // consume the `*/`
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  // Second pass: drop trailing commas. Match `,\s*[}\]]` and remove
+  // the comma. Cheap enough that we don't bother inlining it into
+  // the main scanner.
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+
+/**
+ * Parse a JSONC source string and return the resulting value. Thin
+ * wrapper over the strip helper + `JSON.parse`. Useful when the
+ * caller has the raw bytes and doesn't need the intermediate
+ * cleaned string for any other purpose.
+ */
+export function parseJsonc<T = unknown>(src: string): T {
+  return JSON.parse(stripJsoncCommentsAndTrailingCommas(src)) as T;
+}
+
 function stripHash(c: string | undefined): string | undefined {
   if (!c) return undefined;
   return c.startsWith('#') ? c.slice(1) : c;

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import {
   MARKETPLACE_THEMES,
+  parseJsonc,
   vscodeThemeToMonaco,
   type MarketplaceThemeRef,
   type MonacoTheme,
@@ -100,7 +101,11 @@ export function MarketplacePanel({
     try {
       const res = await fetch(ref.url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const raw = (await res.json()) as VSCodeColorTheme;
+      // VS Code marketplace themes ship as JSONC (comments +
+      // trailing commas), which `res.json()` rejects. Read text +
+      // route through the JSONC-tolerant parser.
+      const text = await res.text();
+      const raw = parseJsonc<VSCodeColorTheme>(text);
       const monacoTheme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
       const nextInstalled = [
         ...installed.filter((t) => t.name !== monacoTheme.name),

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   MARKETPLACE_THEMES,
+  parseJsonc,
   vscodeThemeToMonaco,
   type MarketplaceThemeRef,
   type MonacoTheme,
@@ -106,7 +107,13 @@ export function MarketplacePanel({
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
-      const raw = (await res.json()) as VSCodeColorTheme;
+      // VS Code marketplace themes ship as JSONC — `//` comments
+      // and trailing commas are valid. `res.json()` rejects both,
+      // so we read raw text and parse through the JSONC-tolerant
+      // helper. Without this, microsoft/vscode's first-party
+      // themes (Monokai, Monokai Dimmed, …) all fail to install.
+      const text = await res.text();
+      const raw = parseJsonc<VSCodeColorTheme>(text);
       // Force the display name to the marketplace label so cards,
       // picker entries, and active-state checks all line up on a
       // single key.

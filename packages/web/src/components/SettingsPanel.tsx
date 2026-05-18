@@ -3,6 +3,7 @@ import {
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_THEME_CHOICES,
   MARKETPLACE_THEMES,
+  parseJsonc,
   vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
   type MarketplaceThemeRef,
@@ -116,7 +117,9 @@ export function SettingsPanel({
         setImportError(`Could not fetch ${ref.name} (HTTP ${res.status}).`);
         return;
       }
-      const raw = (await res.json()) as VSCodeColorTheme;
+      // VS Code marketplace themes are JSONC, not strict JSON.
+      const text = await res.text();
+      const raw = parseJsonc<VSCodeColorTheme>(text);
       // Force the converter to use the marketplace display name so
       // entries appear consistently in the picker regardless of
       // what the upstream JSON's `name` field says.
@@ -138,7 +141,9 @@ export function SettingsPanel({
         setImportError('Paste a VS Code color-theme JSON to import.');
         return;
       }
-      const raw = JSON.parse(trimmed) as VSCodeColorTheme;
+      // Pasted JSON may have come straight from a `*-color-theme.json`
+      // file in a VS Code extension, so accept JSONC too.
+      const raw = parseJsonc<VSCodeColorTheme>(trimmed);
       // Validate the bare minimum a marketplace theme always carries.
       // Themes without `tokenColors` AND `colors` are useless and
       // almost certainly the wrong JSON file (e.g. the user pasted a
