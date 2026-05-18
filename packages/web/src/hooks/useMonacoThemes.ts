@@ -10,10 +10,24 @@ import { CUSTOM_THEMES_STORE_KEY } from '../components/SettingsPanel';
  * Minimal `monaco` surface this hook needs. Avoids depending on
  * `monaco-editor` as a peer dep — the consumer passes whatever
  * Monaco instance `@monaco-editor/react`'s `onMount` handed them.
+ *
+ * `themeData` typed as a structural subset of Monaco's
+ * `IStandaloneThemeData`. The `rules` / `colors` fields are widened
+ * to `unknown[]` / `Record<string, string>` so a Monaco namespace
+ * with a stricter `IStandaloneThemeData` (from monaco-editor's own
+ * d.ts) is assignable to this interface without a cast.
  */
 interface MonacoLike {
   editor: {
-    defineTheme: (themeName: string, themeData: unknown) => void;
+    defineTheme: (
+      themeName: string,
+      themeData: {
+        base: 'vs' | 'vs-dark' | 'hc-black' | 'hc-light';
+        inherit: boolean;
+        rules: ReadonlyArray<unknown>;
+        colors: Record<string, string>;
+      },
+    ) => void;
     setTheme: (themeName: string) => void;
   };
 }

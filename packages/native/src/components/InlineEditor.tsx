@@ -18,6 +18,7 @@ import {
   type SettingsStore,
 } from '@codeam/ide-core';
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
+import { ConflictBanner } from './ConflictBanner';
 
 interface Props {
   fetcher: FileFetcher | null;
@@ -361,6 +362,25 @@ export function InlineEditor({
             {error}
           </Text>
         </View>
+      ) : null}
+      {path && buffers[path] !== undefined ? (
+        <ConflictBanner
+          content={buffers[path] ?? ''}
+          onResolved={(next) => {
+            // Update the React-side buffer so the dirty indicator
+            // flips, AND push the new content into the WebView via
+            // the bridge so the visible Monaco buffer matches.
+            // Without the bridge call, the editor still shows the
+            // old (unresolved) text and the next user edit would
+            // re-introduce the conflict markers.
+            setBuffers((prev) => ({ ...prev, [path]: next }));
+            if (webReadyRef.current && webRef.current) {
+              webRef.current.injectJavaScript(
+                `try { window.bridgeSetValue(${JSON.stringify(next)}); } catch (e) {} true;`,
+              );
+            }
+          }}
+        />
       ) : null}
       <View style={styles.body}>
         {loading || html === null ? (
