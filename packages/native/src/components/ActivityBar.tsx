@@ -75,10 +75,23 @@ export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#0d1117',
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: '#1f2433',
+    // Use a 1px border (not hairline) so the bar's right edge is
+    // actually visible on Android — hairlineWidth rounds to <1px on
+    // high-DPI screens and disappears against the near-identical
+    // #0a0d12 main area, leaving the bar visually merged with the
+    // editor. Bumping to a brighter tone makes it pop without
+    // touching the VS Code look.
+    borderRightWidth: 1,
+    borderRightColor: '#262c3a',
     flexDirection: 'column',
     justifyContent: 'space-between',
+    // Force the bar to occupy the full body height. Without this,
+    // RN's `alignItems: stretch` default isn't always honored on
+    // Android when the parent is a row flexbox and the child has
+    // no flex/height — the bar shrinks to the height of its top
+    // section (~144 dp) and the bottom items disappear off-screen
+    // for users on phones with shorter viewports.
+    alignSelf: 'stretch',
   },
   section: { flexDirection: 'column' },
   bottomSection: {
