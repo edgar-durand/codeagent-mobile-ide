@@ -21,6 +21,11 @@ export { SourceControlPanel } from './components/SourceControlPanel';
 export { SearchPanel } from './components/SearchPanel';
 export { SettingsPanel, CUSTOM_THEMES_STORE_KEY } from './components/SettingsPanel';
 export { useMonacoThemes } from './hooks/useMonacoThemes';
+export { useIconResolver } from './hooks/useIconResolver';
+export {
+  ACTIVE_ICON_THEME_STORE_KEY,
+  type ActiveIconTheme,
+} from './components/MarketplacePanel';
 export { TerminalPanel } from './components/TerminalPanel';
 export { TabsBar } from './components/TabsBar';
 export type { EditorTab } from './components/TabsBar';

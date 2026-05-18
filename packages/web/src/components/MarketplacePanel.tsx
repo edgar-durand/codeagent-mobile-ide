@@ -1,14 +1,44 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ICON_THEMES,
   MARKETPLACE_THEMES,
   parseJsonc,
   vscodeThemeToMonaco,
+  type MarketplaceIconThemeRef,
   type MarketplaceThemeRef,
   type MonacoTheme,
   type SettingsStore,
   type VSCodeColorTheme,
+  type VSCodeIconTheme,
 } from '@codeam/ide-core';
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
+
+/**
+ * Storage key for the active file-icon theme. Holds either `null`
+ * (no icon theme — FileTreeSidebar falls back to the default
+ * emoji glyphs) or an object carrying the parsed VS Code icon-
+ * theme JSON + the base URL its `iconPath` entries resolve against.
+ * Persisting both means the FileTreeSidebar can rebuild the
+ * resolver on a cold mount without re-fetching from the network.
+ */
+export const ACTIVE_ICON_THEME_STORE_KEY = 'editor.iconTheme';
+
+export interface ActiveIconTheme {
+  /** Display name (the marketplace entry's `name`). */
+  id: string;
+  /** Parsed `*-icon-theme.json` payload. */
+  theme: VSCodeIconTheme;
+  /** Base URL the relative `iconPath` entries resolve against. */
+  baseUrl: string;
+}
+
+function deriveBaseUrl(jsonUrl: string): string {
+  // The VS Code icon-theme contract places `iconPath` entries
+  // RELATIVE to the theme JSON's own folder. Stripping the
+  // filename component yields the directory URL `new URL()` then
+  // joins against.
+  return jsonUrl.replace(/[^/]+$/, '');
+}
 
 interface Props {
   /** Persists installed themes + currently-active theme. Required —
@@ -18,11 +48,14 @@ interface Props {
   /** Override or extend the curated list. Defaults to
    * `MARKETPLACE_THEMES` from core. */
   themes?: readonly MarketplaceThemeRef[];
-  /** Optional title (defaults to "Themes Marketplace"). */
+  /** Override the file-icon-themes list. Defaults to `ICON_THEMES`. */
+  iconThemes?: readonly MarketplaceIconThemeRef[];
+  /** Optional title (defaults to "Marketplace"). */
   title?: string;
 }
 
 type Filter = 'all' | 'dark' | 'light' | 'installed';
+type Tab = 'colors' | 'icons';
 
 /**
  * VS Code-style themes marketplace browser. Renders each curated
@@ -41,12 +74,15 @@ type Filter = 'all' | 'dark' | 'light' | 'installed';
 export function MarketplacePanel({
   store,
   themes = MARKETPLACE_THEMES,
-  title = 'Themes Marketplace',
+  iconThemes = ICON_THEMES,
+  title = 'Marketplace',
 }: Props) {
+  const [tab, setTab] = useState<Tab>('colors');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [installed, setInstalled] = useState<MonacoTheme[]>([]);
   const [activeTheme, setActiveTheme] = useState<string>('vs-dark');
+  const [activeIconTheme, setActiveIconTheme] = useState<ActiveIconTheme | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
   const [errorByName, setErrorByName] = useState<Record<string, string>>({});
 
@@ -62,6 +98,10 @@ export function MarketplacePanel({
         setActiveTheme(v.theme);
       }
     });
+    void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
+      if (cancelled) return;
+      if (v && typeof v === 'object' && 'id' in v) setActiveIconTheme(v as ActiveIconTheme);
+    });
     const off = store.watch((key, value) => {
       if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
         setInstalled(value as MonacoTheme[]);
@@ -73,6 +113,12 @@ export function MarketplacePanel({
         typeof value.theme === 'string'
       ) {
         setActiveTheme(value.theme);
+      } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
+        setActiveIconTheme(
+          value && typeof value === 'object' && 'id' in value
+            ? (value as ActiveIconTheme)
+            : null,
+        );
       }
     });
     return () => {
@@ -80,6 +126,38 @@ export function MarketplacePanel({
       off();
     };
   }, [store]);
+
+  const installIconTheme = async (ref: MarketplaceIconThemeRef) => {
+    setBusyName(ref.name);
+    setErrorByName((prev) => {
+      const next = { ...prev };
+      delete next[ref.name];
+      return next;
+    });
+    try {
+      const res = await fetch(ref.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const theme = parseJsonc<VSCodeIconTheme>(text);
+      const payload: ActiveIconTheme = {
+        id: ref.name,
+        theme,
+        baseUrl: deriveBaseUrl(ref.url),
+      };
+      await store.set(ACTIVE_ICON_THEME_STORE_KEY, payload);
+    } catch (e) {
+      setErrorByName((prev) => ({
+        ...prev,
+        [ref.name]: e instanceof Error ? e.message : 'Install failed',
+      }));
+    } finally {
+      setBusyName(null);
+    }
+  };
+
+  const uninstallIconTheme = async () => {
+    await store.set(ACTIVE_ICON_THEME_STORE_KEY, null);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -159,6 +237,27 @@ export function MarketplacePanel({
         </span>
       </div>
 
+      {/* Tab strip — colors / icons. Both show the same search +
+          card grid layout, but each draws from its own catalogue
+          and install-state store key. */}
+      <div className="px-3 pt-2 border-b border-gray-800/60 flex items-center gap-1">
+        {(['colors', 'icons'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={[
+              'px-2 py-1 text-[11px] capitalize transition-colors border-b-2 -mb-px',
+              tab === t
+                ? 'text-violet-100 border-violet-400'
+                : 'text-gray-400 hover:text-gray-200 border-transparent',
+            ].join(' ')}
+          >
+            {t === 'colors' ? 'Color themes' : 'File icons'}
+          </button>
+        ))}
+      </div>
+
       <div className="px-3 py-3 border-b border-gray-800/60 flex flex-col gap-2">
         <div className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="#6b7280" aria-hidden="true">
@@ -172,27 +271,119 @@ export function MarketplacePanel({
             className="flex-1 min-w-0 bg-transparent text-[12px] text-gray-200 placeholder:text-gray-500 focus:outline-none"
           />
         </div>
-        <div className="flex items-center gap-1 text-[11px]">
-          {(['all', 'dark', 'light', 'installed'] as const).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={[
-                'px-2 py-0.5 rounded transition-colors capitalize',
-                filter === f
-                  ? 'bg-violet-500/30 text-violet-100 border border-violet-500/60'
-                  : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200 border border-transparent',
-              ].join(' ')}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
+        {tab === 'colors' && (
+          <div className="flex items-center gap-1 text-[11px]">
+            {(['all', 'dark', 'light', 'installed'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                className={[
+                  'px-2 py-0.5 rounded transition-colors capitalize',
+                  filter === f
+                    ? 'bg-violet-500/30 text-violet-100 border border-violet-500/60'
+                    : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200 border border-transparent',
+                ].join(' ')}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto px-3 py-2 flex flex-col gap-2">
-        {filtered.length === 0 ? (
+        {tab === 'icons' ? (
+          iconThemes.length === 0 ? (
+            <div className="text-center text-gray-500 text-[12px] py-12">
+              No icon themes available.
+            </div>
+          ) : (
+            iconThemes
+              .filter((r) => {
+                const q = query.trim().toLowerCase();
+                if (!q) return true;
+                return `${r.name} ${r.publisher} ${r.description}`.toLowerCase().includes(q);
+              })
+              .map((ref) => {
+                const isActive = activeIconTheme?.id === ref.name;
+                const isBusy = busyName === ref.name;
+                const err = errorByName[ref.name];
+                return (
+                  <article
+                    key={ref.name}
+                    className={[
+                      'flex items-stretch gap-3 p-2 rounded-md border transition-colors',
+                      isActive
+                        ? 'border-violet-500/60 bg-violet-500/10'
+                        : 'border-gray-700/40 bg-gray-900/40 hover:bg-gray-900/70',
+                    ].join(' ')}
+                  >
+                    <div
+                      className="w-12 h-16 rounded-sm bg-gray-800/60 flex flex-col items-center justify-center gap-1 shrink-0"
+                      aria-hidden
+                    >
+                      {ref.preview.map((p, idx) => (
+                        <span key={idx} className="text-[16px] leading-none">
+                          {p.emoji}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[13px] font-semibold text-gray-100 truncate">
+                          {ref.name}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                          icons
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-400">{ref.publisher}</span>
+                      <p className="text-[11px] text-gray-300 mt-1 line-clamp-2">
+                        {ref.description}
+                      </p>
+                      {err && <span className="text-[10px] text-rose-300 mt-1">{err}</span>}
+                      <div className="mt-auto pt-2 flex items-center gap-2">
+                        {isActive ? (
+                          <>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-violet-500/30 text-violet-100">
+                              ● Active
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void uninstallIconTheme()}
+                              className="text-[11px] px-2 py-0.5 rounded text-rose-300 hover:bg-rose-500/10"
+                            >
+                              Uninstall
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void installIconTheme(ref)}
+                            className="text-[11px] px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white"
+                          >
+                            {isBusy ? 'Installing…' : 'Install'}
+                          </button>
+                        )}
+                        {ref.homepage && (
+                          <a
+                            href={ref.homepage}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            className="text-[10px] text-gray-500 hover:text-gray-300 ml-auto"
+                          >
+                            Source ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })
+          )
+        ) : filtered.length === 0 ? (
           <div className="text-center text-gray-500 text-[12px] py-12">
             No themes match your filters.
           </div>

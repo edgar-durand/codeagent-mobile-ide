@@ -9,23 +9,40 @@ import {
   View,
 } from 'react-native';
 import {
+  ICON_THEMES,
   MARKETPLACE_THEMES,
   parseJsonc,
   vscodeThemeToMonaco,
+  type MarketplaceIconThemeRef,
   type MarketplaceThemeRef,
   type MonacoTheme,
   type SettingsStore,
   type VSCodeColorTheme,
+  type VSCodeIconTheme,
 } from '@codeam/ide-core';
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
+
+export const ACTIVE_ICON_THEME_STORE_KEY = 'editor.iconTheme';
+
+export interface ActiveIconTheme {
+  id: string;
+  theme: VSCodeIconTheme;
+  baseUrl: string;
+}
+
+function deriveBaseUrl(jsonUrl: string): string {
+  return jsonUrl.replace(/[^/]+$/, '');
+}
 
 interface Props {
   store: SettingsStore;
   themes?: readonly MarketplaceThemeRef[];
+  iconThemes?: readonly MarketplaceIconThemeRef[];
   title?: string;
 }
 
 type Filter = 'all' | 'dark' | 'light' | 'installed';
+type Tab = 'colors' | 'icons';
 
 /**
  * React Native mirror of the web MarketplacePanel. Same fetch /
@@ -37,12 +54,15 @@ type Filter = 'all' | 'dark' | 'light' | 'installed';
 export function MarketplacePanel({
   store,
   themes = MARKETPLACE_THEMES,
-  title = 'Themes Marketplace',
+  iconThemes = ICON_THEMES,
+  title = 'Marketplace',
 }: Props) {
+  const [tab, setTab] = useState<Tab>('colors');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [installed, setInstalled] = useState<MonacoTheme[]>([]);
   const [activeTheme, setActiveTheme] = useState<string>('vs-dark');
+  const [activeIconTheme, setActiveIconTheme] = useState<ActiveIconTheme | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
   const [errorByName, setErrorByName] = useState<Record<string, string>>({});
 
@@ -58,6 +78,10 @@ export function MarketplacePanel({
         setActiveTheme(v.theme);
       }
     });
+    void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
+      if (cancelled) return;
+      if (v && typeof v === 'object' && 'id' in v) setActiveIconTheme(v as ActiveIconTheme);
+    });
     const off = store.watch((key, value) => {
       if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
         setInstalled(value as MonacoTheme[]);
@@ -69,6 +93,12 @@ export function MarketplacePanel({
         typeof value.theme === 'string'
       ) {
         setActiveTheme(value.theme);
+      } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
+        setActiveIconTheme(
+          value && typeof value === 'object' && 'id' in value
+            ? (value as ActiveIconTheme)
+            : null,
+        );
       }
     });
     return () => {
@@ -76,6 +106,38 @@ export function MarketplacePanel({
       off();
     };
   }, [store]);
+
+  const installIconTheme = async (ref: MarketplaceIconThemeRef) => {
+    setBusyName(ref.name);
+    setErrorByName((prev) => {
+      const next = { ...prev };
+      delete next[ref.name];
+      return next;
+    });
+    try {
+      const res = await fetch(ref.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const theme = parseJsonc<VSCodeIconTheme>(text);
+      const payload: ActiveIconTheme = {
+        id: ref.name,
+        theme,
+        baseUrl: deriveBaseUrl(ref.url),
+      };
+      await store.set(ACTIVE_ICON_THEME_STORE_KEY, payload);
+    } catch (e) {
+      setErrorByName((prev) => ({
+        ...prev,
+        [ref.name]: e instanceof Error ? e.message : 'Install failed',
+      }));
+    } finally {
+      setBusyName(null);
+    }
+  };
+
+  const uninstallIconTheme = async () => {
+    await store.set(ACTIVE_ICON_THEME_STORE_KEY, null);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -143,6 +205,19 @@ export function MarketplacePanel({
       <View style={styles.titleRow}>
         <Text style={styles.title}>{title}</Text>
       </View>
+      <View style={styles.tabRow}>
+        {(['colors', 'icons'] as const).map((t) => (
+          <Pressable
+            key={t}
+            onPress={() => setTab(t)}
+            style={[styles.tabChip, tab === t && styles.tabChipActive]}
+          >
+            <Text style={[styles.tabChipText, tab === t && styles.tabChipTextActive]}>
+              {t === 'colors' ? 'Color themes' : 'File icons'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <View style={styles.controls}>
         <TextInput
           value={query}
@@ -153,28 +228,105 @@ export function MarketplacePanel({
           autoCorrect={false}
           style={styles.search}
         />
-        <View style={styles.filterRow}>
-          {(['all', 'dark', 'light', 'installed'] as const).map((f) => (
-            <Pressable
-              key={f}
-              onPress={() => setFilter(f)}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  filter === f && styles.filterChipTextActive,
-                ]}
+        {tab === 'colors' && (
+          <View style={styles.filterRow}>
+            {(['all', 'dark', 'light', 'installed'] as const).map((f) => (
+              <Pressable
+                key={f}
+                onPress={() => setFilter(f)}
+                style={[styles.filterChip, filter === f && styles.filterChipActive]}
               >
-                {f}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    filter === f && styles.filterChipTextActive,
+                  ]}
+                >
+                  {f}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.list}>
-        {filtered.length === 0 ? (
+        {tab === 'icons' ? (
+          iconThemes.length === 0 ? (
+            <Text style={styles.empty}>No icon themes available.</Text>
+          ) : (
+            iconThemes
+              .filter((r) => {
+                const q = query.trim().toLowerCase();
+                if (!q) return true;
+                return `${r.name} ${r.publisher} ${r.description}`.toLowerCase().includes(q);
+              })
+              .map((ref) => {
+                const isActive = activeIconTheme?.id === ref.name;
+                const isBusy = busyName === ref.name;
+                const err = errorByName[ref.name];
+                return (
+                  <View
+                    key={ref.name}
+                    style={[styles.card, isActive && styles.cardActive]}
+                  >
+                    <View style={styles.iconSwatch}>
+                      {ref.preview.map((p, idx) => (
+                        <Text key={idx} style={styles.iconSwatchGlyph}>
+                          {p.emoji}
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={styles.cardBody}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardName} numberOfLines={1}>
+                          {ref.name}
+                        </Text>
+                        <Text style={styles.cardKind}>ICONS</Text>
+                      </View>
+                      <Text style={styles.cardPublisher}>{ref.publisher}</Text>
+                      <Text style={styles.cardDesc} numberOfLines={2}>
+                        {ref.description}
+                      </Text>
+                      {err && <Text style={styles.cardError}>{err}</Text>}
+                      <View style={styles.cardActions}>
+                        {isActive ? (
+                          <>
+                            <View style={styles.activePill}>
+                              <Text style={styles.activePillText}>● Active</Text>
+                            </View>
+                            <Pressable onPress={() => void uninstallIconTheme()}>
+                              <Text style={styles.btnDanger}>Uninstall</Text>
+                            </Pressable>
+                          </>
+                        ) : (
+                          <Pressable
+                            disabled={isBusy}
+                            onPress={() => void installIconTheme(ref)}
+                            style={[styles.btn, styles.btnInstall, isBusy && { opacity: 0.5 }]}
+                          >
+                            <Text style={styles.btnText}>
+                              {isBusy ? 'Installing…' : 'Install'}
+                            </Text>
+                          </Pressable>
+                        )}
+                        {ref.homepage && (
+                          <Pressable
+                            style={styles.sourceLink}
+                            onPress={() => {
+                              if (ref.homepage) void Linking.openURL(ref.homepage);
+                            }}
+                          >
+                            <Text style={styles.sourceLinkText}>Source ↗</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+          )
+        ) : filtered.length === 0 ? (
           <Text style={styles.empty}>No themes match your filters.</Text>
         ) : (
           filtered.map((ref) => {
@@ -355,4 +507,32 @@ const styles = StyleSheet.create({
   activePillText: { color: '#ede9fe', fontSize: 10, fontWeight: '600' },
   sourceLink: { marginLeft: 'auto' },
   sourceLinkText: { color: '#6b7280', fontSize: 10 },
+  tabRow: {
+    flexDirection: 'row',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f2433',
+  },
+  tabChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -1,
+  },
+  tabChipActive: { borderBottomColor: '#a78bfa' },
+  tabChipText: { color: '#9ca3af', fontSize: 11 },
+  tabChipTextActive: { color: '#ede9fe' },
+  iconSwatch: {
+    width: 44,
+    height: 64,
+    borderRadius: 4,
+    backgroundColor: 'rgba(31,36,51,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  iconSwatchGlyph: { fontSize: 14 },
 });

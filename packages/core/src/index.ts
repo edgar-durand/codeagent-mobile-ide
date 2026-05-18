@@ -76,11 +76,12 @@ export {
   BUILTIN_MONACO_THEMES,
   BUNDLED_CUSTOM_THEMES,
   DEFAULT_THEME_CHOICES,
+  ICON_THEMES,
   MARKETPLACE_THEMES,
   githubDarkTheme,
   githubLightTheme,
 } from './themes';
-export type { MarketplaceThemeRef } from './themes';
+export type { MarketplaceIconThemeRef, MarketplaceThemeRef } from './themes';
 
 export type { ConflictHunk } from './utils/conflicts';
 export {

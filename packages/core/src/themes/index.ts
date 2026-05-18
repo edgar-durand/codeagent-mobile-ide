@@ -242,3 +242,58 @@ export const MARKETPLACE_THEMES: readonly MarketplaceThemeRef[] = [
     swatch: { bg: '#2d2b55', fg: '#ffffff', accent: '#fad000' },
   },
 ];
+
+/**
+ * Curated file-icon themes. Same browse / install / activate flow
+ * as the color themes — fetch the upstream JSON, parse it via the
+ * VS Code icon-theme converter, persist the FULL parsed object in
+ * the SettingsStore so the FileTreeSidebar can rebuild a
+ * `FileIconResolver` on every mount without a network round-trip.
+ *
+ * `url` MUST point at the theme's `*-icon-theme.json` payload. The
+ * library derives the asset base URL by stripping the JSON's
+ * filename component, so individual icon paths inside the theme
+ * (e.g. `./../icons/git.svg`) resolve correctly relative to the
+ * theme's own folder layout.
+ *
+ * Inclusion criteria:
+ *   - Permissive license (MIT / Apache).
+ *   - Working CORS-friendly URL that serves the JSON.
+ *   - Asset files (SVG / PNG) reachable from the same origin.
+ *   - JSON-based, not font-based — Seti, Codicon, and similar
+ *     font-glyph icon themes need a WOFF that browsers can't
+ *     register without an extra `@font-face` step we haven't built.
+ */
+export interface MarketplaceIconThemeRef {
+  /** Display name. */
+  name: string;
+  publisher: string;
+  description: string;
+  /** Direct URL to the `*-icon-theme.json`. */
+  url: string;
+  /** Optional repo / homepage URL. */
+  homepage?: string;
+  /**
+   * Three preview icons rendered on the card before install — each
+   * is either an emoji glyph or a relative URL (joined against the
+   * theme's own `baseUrl` at preview-time). Pick three highly
+   * recognisable file types so the user can sanity-check the
+   * visual style at a glance.
+   */
+  preview: ReadonlyArray<{ alt: string; emoji: string }>;
+}
+
+export const ICON_THEMES: readonly MarketplaceIconThemeRef[] = [
+  {
+    name: 'Material Icon Theme',
+    publisher: 'Philipp Kief',
+    description: 'Material Design icons for files and folders. 980+ file-type mappings.',
+    url: 'https://cdn.jsdelivr.net/npm/material-icon-theme@5.16.0/dist/material-icons.json',
+    homepage: 'https://github.com/material-extensions/vscode-material-icon-theme',
+    preview: [
+      { alt: 'TS', emoji: '🟦' },
+      { alt: 'JS', emoji: '🟨' },
+      { alt: 'JSON', emoji: '🟫' },
+    ],
+  },
+];
