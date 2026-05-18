@@ -6,6 +6,13 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.9.1] — 2026-05-18
+
+### Added
+
+- **web,native:** Inlineeditor renders conflictbanner automatically
+- **core,web,native:** Push and pull buttons in source control panel
+
 ## [0.9.0] — 2026-05-18
 
 ### Added
