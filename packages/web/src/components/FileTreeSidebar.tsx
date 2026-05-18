@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FileTreeEntry, FileTreeProvider } from '@codeam/ide-core';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type {
+  FileIconRef,
+  FileIconResolver,
+  FileTreeEntry,
+  FileTreeProvider,
+} from '@codeam/ide-core';
 
 interface Props {
   /** Adapter that yields the workspace's file list. Identity should be
@@ -19,6 +24,31 @@ interface Props {
    * changes (e.g. after a git pull or branch switch). Default is a
    * fixed key, so the load only fires once per mount. */
   reloadKey?: string | number;
+  /**
+   * Optional file-icon theme. When supplied, each row renders an
+   * icon from the resolver instead of the default emoji glyphs.
+   * Wire via `buildIconResolver(themeJson, baseUrl)` from core.
+   */
+  iconResolver?: FileIconResolver | null;
+}
+
+function IconCell({ ref: r }: { ref: FileIconRef }): ReactNode {
+  if (r.kind === 'uri') {
+    // Squared icon slot — VS Code-style icon themes are 16×16 PNG /
+    // SVG. We size the slot, not the image, so transparent margins
+    // in the source still render correctly.
+    return (
+      <span
+        aria-hidden
+        className="inline-block w-4 h-4 bg-no-repeat bg-center"
+        style={{ backgroundImage: `url(${JSON.stringify(r.uri).slice(1, -1)})`, backgroundSize: 'contain' }}
+      />
+    );
+  }
+  if (r.kind === 'emoji') {
+    return <span className="text-[12px] leading-none">{r.char}</span>;
+  }
+  return null;
 }
 
 interface TreeNode {
@@ -62,6 +92,7 @@ function NodeRow({
   onSelect,
   expanded,
   setExpanded,
+  iconResolver,
 }: {
   node: TreeNode;
   depth: number;
@@ -69,11 +100,13 @@ function NodeRow({
   onSelect: (p: string) => void;
   expanded: Set<string>;
   setExpanded: (n: Set<string>) => void;
+  iconResolver?: FileIconResolver | null;
 }) {
   const isOpen = expanded.has(node.fullPath);
   const isSelected = selectedPath === node.fullPath;
 
   if (node.isFile) {
+    const iconRef = iconResolver?.forFile(node.name);
     return (
       <button
         type="button"
@@ -86,12 +119,17 @@ function NodeRow({
         style={{ paddingLeft: 4 + depth * 12 }}
         title={node.fullPath}
       >
-        <span className="text-[10px] text-gray-500 group-hover:text-gray-400">📄</span>
+        {iconRef && iconRef.kind !== 'none' ? (
+          <IconCell ref={iconRef} />
+        ) : (
+          <span className="text-[10px] text-gray-500 group-hover:text-gray-400">📄</span>
+        )}
         <span className="font-mono text-[12px] truncate">{node.name}</span>
       </button>
     );
   }
 
+  const folderIcon = iconResolver?.forFolder(node.name, isOpen);
   return (
     <div>
       <button
@@ -106,6 +144,7 @@ function NodeRow({
         style={{ paddingLeft: 4 + depth * 12 }}
       >
         <span className="text-[10px] text-gray-500 w-3">{isOpen ? '▾' : '▸'}</span>
+        {folderIcon && folderIcon.kind !== 'none' && <IconCell ref={folderIcon} />}
         <span className="font-mono text-[12px] font-semibold text-gray-200">{node.name}</span>
       </button>
       {isOpen && (
@@ -119,6 +158,7 @@ function NodeRow({
               onSelect={onSelect}
               expanded={expanded}
               setExpanded={setExpanded}
+              iconResolver={iconResolver}
             />
           ))}
         </div>
@@ -138,7 +178,13 @@ function NodeRow({
  * is active the sidebar switches to a flat list (capped at 500
  * results) so matches are scannable without expanding folders.
  */
-export function FileTreeSidebar({ provider, selectedPath, onSelect, reloadKey }: Props) {
+export function FileTreeSidebar({
+  provider,
+  selectedPath,
+  onSelect,
+  reloadKey,
+  iconResolver,
+}: Props) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [files, setFiles] = useState<FileTreeEntry[]>([]);
@@ -230,7 +276,15 @@ export function FileTreeSidebar({ provider, selectedPath, onSelect, reloadKey }:
                 }`}
                 title={f.path}
               >
-                <span className="text-[10px] text-gray-500 group-hover:text-gray-400">📄</span>
+                {(() => {
+                  const basename = f.path.split('/').pop() ?? f.path;
+                  const ref = iconResolver?.forFile(basename);
+                  return ref && ref.kind !== 'none' ? (
+                    <IconCell ref={ref} />
+                  ) : (
+                    <span className="text-[10px] text-gray-500 group-hover:text-gray-400">📄</span>
+                  );
+                })()}
                 <span className="font-mono text-[12px] truncate">{f.path}</span>
               </button>
             ))}
@@ -250,6 +304,7 @@ export function FileTreeSidebar({ provider, selectedPath, onSelect, reloadKey }:
               onSelect={onSelect}
               expanded={expanded}
               setExpanded={setExpanded}
+              iconResolver={iconResolver}
             />
           ))
         )}

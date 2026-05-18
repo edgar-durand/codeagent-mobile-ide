@@ -53,8 +53,13 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
   const [exclude, setExclude] = useState('');
   const [result, setResult] = useState<SearchResult | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replacement, setReplacement] = useState('');
+  const [replacing, setReplacing] = useState(false);
+  const [replaceStatus, setReplaceStatus] = useState<string | null>(null);
   const providerRef = useRef(provider);
   providerRef.current = provider;
+  const replaceSupported = typeof provider.replace === 'function';
 
   const fetchKey = useMemo(
     () =>
@@ -136,6 +141,41 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
     });
   };
 
+  const runReplace = async (
+    targets?: Array<{ path: string; line?: number; column?: number }>,
+  ) => {
+    if (!replaceSupported || !debouncedQuery || !provider.replace) return;
+    setReplacing(true);
+    setReplaceStatus(null);
+    try {
+      const r = await provider.replace(
+        debouncedQuery,
+        replacement,
+        {
+          caseSensitive,
+          wholeWord,
+          regex,
+          include: include
+            ? include.split(',').map((s) => s.trim()).filter(Boolean)
+            : undefined,
+          exclude: exclude
+            ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+            : undefined,
+        },
+        targets,
+      );
+      setReplaceStatus(
+        `Replaced ${r.replaced} in ${r.filesChanged} file${r.filesChanged === 1 ? '' : 's'}.`,
+      );
+      // Re-run search so the result list reflects post-replace state.
+      setCommittedKey(null);
+    } catch (e) {
+      setReplaceStatus(e instanceof Error ? e.message : 'Replace failed');
+    } finally {
+      setReplacing(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -159,12 +199,41 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
           <ToggleBtn label="Aa" on={caseSensitive} onPress={() => setCaseSensitive((v) => !v)} />
           <ToggleBtn label="ab" on={wholeWord} onPress={() => setWholeWord((v) => !v)} />
           <ToggleBtn label=".*" on={regex} onPress={() => setRegex((v) => !v)} />
+          {replaceSupported && (
+            <ToggleBtn label="⇄" on={replaceOpen} onPress={() => setReplaceOpen((v) => !v)} />
+          )}
           <Pressable onPress={() => setShowAdvanced((v) => !v)} hitSlop={6}>
             <Text style={styles.advancedToggle}>
               {showAdvanced ? '▾ files to include / exclude' : '▸ files to include / exclude'}
             </Text>
           </Pressable>
         </View>
+        {replaceSupported && replaceOpen && (
+          <View style={styles.replaceRow}>
+            <View style={styles.inputWrap}>
+              <Text style={styles.inputIcon}>↦</Text>
+              <TextInput
+                value={replacement}
+                onChangeText={setReplacement}
+                placeholder="Replace"
+                placeholderTextColor="#6b7280"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+              />
+            </View>
+            <Pressable
+              disabled={!debouncedQuery || replacing}
+              onPress={() => void runReplace()}
+              style={[styles.replaceAllBtn, (!debouncedQuery || replacing) && { opacity: 0.5 }]}
+            >
+              <Text style={styles.replaceAllText}>All</Text>
+            </Pressable>
+          </View>
+        )}
+        {replaceSupported && replaceStatus && (
+          <Text style={styles.replaceStatus}>{replaceStatus}</Text>
+        )}
         {showAdvanced ? (
           <View style={styles.advancedBlock}>
             <TextInput
@@ -327,4 +396,13 @@ const styles = StyleSheet.create({
   groupCount: { fontSize: 10, color: '#6b7280' },
   hitRow: { paddingHorizontal: 32, paddingVertical: 2 },
   hitText: { fontSize: 11, color: '#d1d5db', fontFamily: 'Menlo' },
+  replaceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  replaceAllBtn: {
+    backgroundColor: '#7c3aed',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  replaceAllText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  replaceStatus: { fontSize: 10, color: '#9ca3af', marginTop: 2 },
 });

@@ -48,8 +48,13 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
   const [exclude, setExclude] = useState('');
   const [result, setResult] = useState<SearchResult | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replacement, setReplacement] = useState('');
+  const [replacing, setReplacing] = useState(false);
+  const [replaceStatus, setReplaceStatus] = useState<string | null>(null);
   const providerRef = useRef(provider);
   providerRef.current = provider;
+  const replaceSupported = typeof provider.replace === 'function';
 
   const fetchKey = useMemo(
     () =>
@@ -121,6 +126,44 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
     });
   };
 
+  const currentOptions = (): SearchOptions => ({
+    caseSensitive,
+    wholeWord,
+    regex,
+    include: include
+      ? include.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined,
+    exclude: exclude
+      ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined,
+  });
+
+  const runReplace = async (
+    targets?: Array<{ path: string; line?: number; column?: number }>,
+  ) => {
+    if (!replaceSupported || !debouncedQuery || !provider.replace) return;
+    setReplacing(true);
+    setReplaceStatus(null);
+    try {
+      const r = await provider.replace(
+        debouncedQuery,
+        replacement,
+        currentOptions(),
+        targets,
+      );
+      setReplaceStatus(
+        `Replaced ${r.replaced} occurrence${r.replaced === 1 ? '' : 's'} in ${r.filesChanged} file${r.filesChanged === 1 ? '' : 's'}.`,
+      );
+      // Re-run the search so the result list reflects the new file
+      // contents. Bumping committedKey forces the loader to fire.
+      setCommittedKey(null);
+    } catch (e) {
+      setReplaceStatus(e instanceof Error ? e.message : 'Replace failed');
+    } finally {
+      setReplacing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#0d1117] text-gray-200 min-w-0">
       <div className="px-3 py-2 border-b border-gray-800/60">
@@ -159,7 +202,50 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
           <Toggle on={caseSensitive} onChange={setCaseSensitive} label="Match case" hint="Aa" />
           <Toggle on={wholeWord} onChange={setWholeWord} label="Whole word" hint="ab" />
           <Toggle on={regex} onChange={setRegex} label="Regex" hint=".*" />
+          {replaceSupported && (
+            <button
+              type="button"
+              onClick={() => setReplaceOpen((o) => !o)}
+              aria-label="Toggle replace"
+              title="Toggle replace"
+              className={[
+                'w-6 h-6 inline-flex items-center justify-center rounded font-mono text-[10px] transition-colors ml-auto',
+                replaceOpen
+                  ? 'bg-violet-500/30 text-violet-100 border border-violet-500/60'
+                  : 'text-gray-500 hover:bg-gray-800/60 hover:text-gray-300 border border-transparent',
+              ].join(' ')}
+            >
+              ⇄
+            </button>
+          )}
         </div>
+
+        {replaceSupported && replaceOpen && (
+          <div
+            className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50"
+          >
+            <span className="text-[10px] text-gray-500 shrink-0">↦</span>
+            <input
+              type="text"
+              value={replacement}
+              onChange={(e) => setReplacement(e.target.value)}
+              placeholder="Replace"
+              className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-gray-200 placeholder:text-gray-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              disabled={!debouncedQuery || replacing}
+              onClick={() => void runReplace()}
+              className="text-[10px] px-2 py-0.5 rounded bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white shrink-0"
+              title="Replace all"
+            >
+              All
+            </button>
+          </div>
+        )}
+        {replaceSupported && replaceStatus && (
+          <div className="text-[10px] text-gray-400">{replaceStatus}</div>
+        )}
 
         <details className="text-[11px] text-gray-400">
           <summary className="cursor-pointer hover:text-gray-200">
@@ -205,20 +291,35 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
               const isCollapsed = collapsed.has(g.path);
               return (
                 <div key={g.path}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(g.path)}
-                    className="w-full flex items-center gap-1.5 px-3 py-1 hover:bg-gray-800/40 text-left transition-colors"
-                  >
-                    <span className="text-[10px] text-gray-500 w-3">
-                      {isCollapsed ? '▸' : '▾'}
-                    </span>
-                    <span className="text-[14px]">📄</span>
-                    <span className="font-mono text-[12px] text-gray-200 truncate flex-1">
-                      {g.path}
-                    </span>
-                    <span className="text-[10px] text-gray-500">{g.hits.length}</span>
-                  </button>
+                  <div className="group flex items-center px-3 py-1 hover:bg-gray-800/40 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggle(g.path)}
+                      className="flex items-center gap-1.5 text-left flex-1 min-w-0"
+                    >
+                      <span className="text-[10px] text-gray-500 w-3">
+                        {isCollapsed ? '▸' : '▾'}
+                      </span>
+                      <span className="text-[14px]">📄</span>
+                      <span className="font-mono text-[12px] text-gray-200 truncate flex-1">
+                        {g.path}
+                      </span>
+                      <span className="text-[10px] text-gray-500">{g.hits.length}</span>
+                    </button>
+                    {replaceSupported && replaceOpen && (
+                      <button
+                        type="button"
+                        disabled={replacing}
+                        onClick={() =>
+                          void runReplace([{ path: g.path }])
+                        }
+                        className="opacity-0 group-hover:opacity-100 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/30 hover:bg-violet-500/50 text-violet-100 ml-2 transition-opacity"
+                        title="Replace in this file"
+                      >
+                        ↦
+                      </button>
+                    )}
+                  </div>
                   {!isCollapsed &&
                     g.hits.map((h, idx) => (
                       <button

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -9,13 +10,42 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { FileTreeEntry, FileTreeProvider } from '@codeam/ide-core';
+import type {
+  FileIconRef,
+  FileIconResolver,
+  FileTreeEntry,
+  FileTreeProvider,
+} from '@codeam/ide-core';
 
 interface Props {
   provider: FileTreeProvider;
   selectedPath: string | null;
   onSelect: (path: string) => void;
   reloadKey?: string | number;
+  /**
+   * Optional icon theme. When supplied, each row renders an icon
+   * from the resolver instead of the default Ionicons fallback.
+   * `uri` icons render via `<Image>` so the consumer is responsible
+   * for hosting the asset somewhere fetchable; `emoji` glyphs work
+   * offline.
+   */
+  iconResolver?: FileIconResolver | null;
+}
+
+function IconCell({ icon }: { icon: FileIconRef }) {
+  if (icon.kind === 'uri') {
+    return (
+      <Image
+        source={{ uri: icon.uri }}
+        style={{ width: 14, height: 14, marginRight: 4 }}
+        resizeMode="contain"
+      />
+    );
+  }
+  if (icon.kind === 'emoji') {
+    return <Text style={{ fontSize: 12, marginRight: 4 }}>{icon.char}</Text>;
+  }
+  return null;
 }
 
 interface FlatRow {
@@ -84,7 +114,13 @@ function flattenTree(node: TreeNode, expanded: Set<string>, depth: number, out: 
  * @shopify/flash-list which we don't want to force; FlatList is
  * adequate up to several thousand entries).
  */
-export function FileTreeSidebar({ provider, selectedPath, onSelect, reloadKey }: Props) {
+export function FileTreeSidebar({
+  provider,
+  selectedPath,
+  onSelect,
+  reloadKey,
+  iconResolver,
+}: Props) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [files, setFiles] = useState<FileTreeEntry[]>([]);
@@ -196,12 +232,34 @@ export function FileTreeSidebar({ provider, selectedPath, onSelect, reloadKey }:
                 ]}
               >
                 {item.kind === 'folder' ? (
-                  <Ionicons
-                    name={item.isOpen ? 'chevron-down' : 'chevron-forward'}
-                    size={11}
-                    color="#6b7280"
-                    style={styles.chevron}
-                  />
+                  <>
+                    <Ionicons
+                      name={item.isOpen ? 'chevron-down' : 'chevron-forward'}
+                      size={11}
+                      color="#6b7280"
+                      style={styles.chevron}
+                    />
+                    {iconResolver
+                      ? (() => {
+                          const ref = iconResolver.forFolder(item.name, !!item.isOpen);
+                          return ref.kind !== 'none' ? <IconCell icon={ref} /> : null;
+                        })()
+                      : null}
+                  </>
+                ) : iconResolver ? (
+                  (() => {
+                    const ref = iconResolver.forFile(item.name);
+                    return ref.kind !== 'none' ? (
+                      <IconCell icon={ref} />
+                    ) : (
+                      <Ionicons
+                        name="document-outline"
+                        size={11}
+                        color="#6b7280"
+                        style={styles.chevron}
+                      />
+                    );
+                  })()
                 ) : (
                   <Ionicons
                     name="document-outline"

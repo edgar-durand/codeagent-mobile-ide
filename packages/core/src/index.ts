@@ -60,6 +60,14 @@ export type {
 } from './types/theme';
 export { vscodeThemeToMonaco } from './types/theme';
 
+export type {
+  FileIconResolver,
+  FileIconRef,
+  VSCodeIconTheme,
+  VSCodeIconDefinition,
+} from './types/icon-theme';
+export { buildIconResolver } from './types/icon-theme';
+
 export {
   BUILTIN_MONACO_THEMES,
   BUNDLED_CUSTOM_THEMES,

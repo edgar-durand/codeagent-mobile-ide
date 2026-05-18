@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -21,6 +22,34 @@ interface Props {
   onSelect?: (entry: GitStatusEntry) => void;
   title?: string;
   reloadKey?: string | number;
+}
+
+/**
+ * Conventional Commits prefix presets — kept byte-identical to the
+ * web SourceControlPanel so a future shared abstraction is just a
+ * copy-paste removal. Emoji glyphs follow the gitmoji convention
+ * for the four most useful types.
+ */
+const CC_PREFIXES: Array<{ type: string; emoji?: string }> = [
+  { type: 'feat', emoji: '✨' },
+  { type: 'fix', emoji: '🐛' },
+  { type: 'chore' },
+  { type: 'docs', emoji: '📝' },
+  { type: 'refactor' },
+  { type: 'test' },
+  { type: 'perf', emoji: '⚡️' },
+  { type: 'build' },
+  { type: 'ci' },
+  { type: 'style' },
+  { type: 'revert' },
+];
+
+function applyCommitPrefix(current: string, type: string, emoji?: string): string {
+  const trimmed = current.trimStart();
+  const ccRe = /^[a-z]+(\([^)]+\))?!?:\s*(?:[\u{1F300}-\u{1FAFF}]\s*)?/u;
+  const rest = trimmed.replace(ccRe, '');
+  const prefix = emoji ? `${type}: ${emoji} ` : `${type}: `;
+  return prefix + rest;
 }
 
 function chipFor(entry: GitStatusEntry): { label: string; color: string } {
@@ -186,6 +215,29 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
           if (item.kind === 'composer') {
             return (
               <View style={styles.composer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.prefixRow}
+                >
+                  {CC_PREFIXES.map((p) => (
+                    <Pressable
+                      key={p.type}
+                      onPress={() =>
+                        setMessage((prev) => applyCommitPrefix(prev, p.type, p.emoji))
+                      }
+                      style={({ pressed }) => [
+                        styles.prefixChip,
+                        pressed && styles.prefixChipPressed,
+                      ]}
+                    >
+                      <Text style={styles.prefixChipText}>
+                        {p.emoji ? `${p.emoji} ` : ''}
+                        {p.type}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
                 <TextInput
                   value={message}
                   onChangeText={setMessage}
@@ -445,4 +497,15 @@ const styles = StyleSheet.create({
   empty: { padding: 24, alignItems: 'center', gap: 6 },
   emptyText: { fontSize: 11, color: '#6b7280' },
   errorText: { padding: 24, textAlign: 'center', color: '#fb7185', fontSize: 12 },
+  prefixRow: { gap: 4, paddingBottom: 6, paddingRight: 8 },
+  prefixChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#374151',
+    backgroundColor: 'rgba(17,24,39,0.6)',
+  },
+  prefixChipPressed: { backgroundColor: 'rgba(124,58,237,0.25)', borderColor: '#a78bfa' },
+  prefixChipText: { fontSize: 10, color: '#d1d5db', fontFamily: 'Menlo' },
 });

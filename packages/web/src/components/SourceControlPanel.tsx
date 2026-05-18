@@ -15,6 +15,46 @@ interface Props {
   reloadKey?: string | number;
 }
 
+/**
+ * Conventional Commits prefix presets exposed in the commit
+ * composer. Order is the rough frequency-of-use that ships with
+ * `cz-conventional-changelog`; the most-used types live first so
+ * the strip degrades gracefully on narrow viewports (others wrap).
+ *
+ * `emoji` is optional and only inserted when the user toggles it
+ * in. Gitmoji syntax is widely recognised on GitHub / GitLab; we
+ * stick to the four most useful glyphs and let consumers extend by
+ * passing their own list via a future `commitPresets` prop.
+ */
+const CC_PREFIXES: Array<{ type: string; emoji?: string }> = [
+  { type: 'feat', emoji: '✨' },
+  { type: 'fix', emoji: '🐛' },
+  { type: 'chore' },
+  { type: 'docs', emoji: '📝' },
+  { type: 'refactor' },
+  { type: 'test' },
+  { type: 'perf', emoji: '⚡️' },
+  { type: 'build' },
+  { type: 'ci' },
+  { type: 'style' },
+  { type: 'revert' },
+];
+
+/**
+ * Insert (or REPLACE if already prefixed) a Conventional Commits
+ * type onto the current commit message. Idempotent: tapping `feat`
+ * then `fix` produces `fix: …`, not `fix(feat):`.
+ */
+function applyCommitPrefix(current: string, type: string, emoji?: string): string {
+  const trimmed = current.trimStart();
+  // Strip an existing CC prefix (type or type(scope) followed by an
+  // optional emoji and a colon) so the swap reads cleanly.
+  const ccRe = /^[a-z]+(\([^)]+\))?!?:\s*(?:[\u{1F300}-\u{1FAFF}]\s*)?/u;
+  const rest = trimmed.replace(ccRe, '');
+  const prefix = emoji ? `${type}: ${emoji} ` : `${type}: `;
+  return prefix + rest;
+}
+
 function chipFor(entry: GitStatusEntry): { label: string; color: string } {
   if (entry.conflict) return { label: 'C', color: '#fb7185' };
   if (entry.code === '??') return { label: 'U', color: '#34d399' };
@@ -184,6 +224,27 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
       {/* Commit composer */}
       {changesOpen ? (
         <div className="px-3 pt-2 flex flex-col gap-2">
+          {/* Conventional Commits prefix chips. Tap inserts the
+              prefix at the start of the message (idempotent — if
+              the message already starts with a known prefix, the
+              new one replaces it). Emoji presets are an
+              ergonomics nicety, not a hard convention. */}
+          <div className="flex flex-wrap items-center gap-1">
+            {CC_PREFIXES.map((p) => (
+              <button
+                key={p.type}
+                type="button"
+                onClick={() =>
+                  setMessage((prev) => applyCommitPrefix(prev, p.type, p.emoji))
+                }
+                title={`${p.type}${p.emoji ? ' ' + p.emoji : ''}`}
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-gray-700/60 text-gray-300 hover:bg-violet-500/20 hover:border-violet-500/60 hover:text-violet-100 transition-colors"
+              >
+                {p.emoji ? <span className="mr-0.5">{p.emoji}</span> : null}
+                {p.type}
+              </button>
+            ))}
+          </div>
           <input
             type="text"
             value={message}

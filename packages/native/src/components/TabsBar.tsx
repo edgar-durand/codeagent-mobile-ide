@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export interface EditorTab {
   id: string;
@@ -14,6 +14,9 @@ interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
+  /** Same contract as the web TabsBar. Surfaced via long-press on
+   * the tab (no native right-click). */
+  onBulkClose?: (op: 'others' | 'right' | 'all', anchorId: string) => void;
   rightActions?: ReactNode;
 }
 
@@ -23,7 +26,15 @@ interface Props {
  * Horizontally scrollable; closing a tab shows the X button on
  * press-and-hold (mobile-friendlier than VS Code's hover-only X).
  */
-export function TabsBar({ tabs, activeId, onSelect, onClose, rightActions }: Props) {
+export function TabsBar({
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+  onBulkClose,
+  rightActions,
+}: Props) {
+  const [menuTabId, setMenuTabId] = useState<string | null>(null);
   if (tabs.length === 0 && !rightActions) return null;
   return (
     <View style={styles.container}>
@@ -38,6 +49,10 @@ export function TabsBar({ tabs, activeId, onSelect, onClose, rightActions }: Pro
             <Pressable
               key={t.id}
               onPress={() => onSelect(t.id)}
+              onLongPress={() => {
+                if (onBulkClose) setMenuTabId(t.id);
+              }}
+              delayLongPress={350}
               style={({ pressed }) => [
                 styles.tab,
                 isActive && styles.tabActive,
@@ -71,7 +86,57 @@ export function TabsBar({ tabs, activeId, onSelect, onClose, rightActions }: Pro
         })}
       </ScrollView>
       {rightActions ? <View style={styles.rightActions}>{rightActions}</View> : null}
+      <Modal
+        visible={menuTabId !== null && !!onBulkClose}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuTabId(null)}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuTabId(null)}>
+          <View style={styles.menuCard} pointerEvents="box-none">
+            <MenuRow
+              label="Close"
+              onPress={() => {
+                if (menuTabId) onClose(menuTabId);
+                setMenuTabId(null);
+              }}
+            />
+            <MenuRow
+              label="Close others"
+              onPress={() => {
+                if (menuTabId && onBulkClose) onBulkClose('others', menuTabId);
+                setMenuTabId(null);
+              }}
+            />
+            <MenuRow
+              label="Close to the right"
+              onPress={() => {
+                if (menuTabId && onBulkClose) onBulkClose('right', menuTabId);
+                setMenuTabId(null);
+              }}
+            />
+            <MenuRow
+              label="Close all"
+              onPress={() => {
+                if (menuTabId && onBulkClose) onBulkClose('all', menuTabId);
+                setMenuTabId(null);
+              }}
+            />
+          </View>
+        </Pressable>
+      </Modal>
     </View>
+  );
+}
+
+function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+    >
+      <Text style={styles.menuRowText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -122,4 +187,21 @@ const styles = StyleSheet.create({
     borderLeftColor: '#1f2433',
     gap: 4,
   },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuCard: {
+    backgroundColor: '#0d1117',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#262c3a',
+    minWidth: 220,
+    paddingVertical: 4,
+  },
+  menuRow: { paddingHorizontal: 14, paddingVertical: 10 },
+  menuRowPressed: { backgroundColor: 'rgba(124,58,237,0.2)' },
+  menuRowText: { color: '#e5e7eb', fontSize: 13 },
 });

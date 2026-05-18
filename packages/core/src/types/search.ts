@@ -41,4 +41,23 @@ export interface SearchResult {
 
 export interface SearchProvider {
   search(query: string, options?: SearchOptions): Promise<SearchResult>;
+  /**
+   * Optional. When implemented, the SearchPanel renders a replace
+   * input + per-hit / Replace-All affordances. Implementations
+   * should perform the substitution server-side (single
+   * transactional pass per file, never per-hit) and return the
+   * count of replaced occurrences.
+   *
+   * Providers that don't support replace simply omit this method —
+   * the UI hides the replace surface automatically.
+   */
+  replace?(
+    query: string,
+    replacement: string,
+    options?: SearchOptions,
+    /** When provided, restricts the replacement to a specific
+     * subset of hits — used by the "Replace in this file" action.
+     * Empty / omitted ⇒ replace across the entire search scope. */
+    targets?: Array<{ path: string; line?: number; column?: number }>,
+  ): Promise<{ filesChanged: number; replaced: number }>;
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 export interface EditorTab {
   /** Stable identifier for the tab. The IDE host uses this in
@@ -22,8 +22,21 @@ interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
+  /**
+   * Bulk-close handler. Receives the operation type the user
+   * picked from the right-click context menu. Consumer is expected
+   * to call `onClose` for each affected tab (or skip dirty tabs +
+   * surface the save prompt itself).
+   */
+  onBulkClose?: (op: 'others' | 'right' | 'all', anchorId: string) => void;
   /** Optional right-side action slot (e.g. "Split editor" button). */
   rightActions?: ReactNode;
+}
+
+interface ContextMenuState {
+  tabId: string;
+  x: number;
+  y: number;
 }
 
 /**
@@ -36,10 +49,33 @@ interface Props {
  * live in a separate component — `Breadcrumbs.tsx` — so consumers
  * can dock them independently.
  */
-export function TabsBar({ tabs, activeId, onSelect, onClose, rightActions }: Props) {
+export function TabsBar({
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+  onBulkClose,
+  rightActions,
+}: Props) {
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  // Dismiss the context menu on any outside click / Escape press.
+  useEffect(() => {
+    if (!menu) return;
+    const onDoc = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
   if (tabs.length === 0 && !rightActions) return null;
   return (
-    <div className="flex items-stretch h-9 bg-[#161b22] border-b border-gray-800/60 select-none">
+    <div className="relative flex items-stretch h-9 bg-[#161b22] border-b border-gray-800/60 select-none">
       <div className="flex-1 flex items-stretch overflow-x-auto scrollbar-thin">
         {tabs.map((t) => {
           const isActive = t.id === activeId;
@@ -55,6 +91,11 @@ export function TabsBar({ tabs, activeId, onSelect, onClose, rightActions }: Pro
                   : 'bg-transparent text-gray-400 hover:bg-gray-800/40 hover:text-gray-200',
               ].join(' ')}
               onClick={() => onSelect(t.id)}
+              onContextMenu={(e) => {
+                if (!onBulkClose) return;
+                e.preventDefault();
+                setMenu({ tabId: t.id, x: e.clientX, y: e.clientY });
+              }}
             >
               {t.icon ? <span className="text-[12px]">{t.icon}</span> : null}
               <span
@@ -90,6 +131,55 @@ export function TabsBar({ tabs, activeId, onSelect, onClose, rightActions }: Pro
           {rightActions}
         </div>
       ) : null}
+      {menu && onBulkClose ? (
+        <div
+          role="menu"
+          className="fixed z-50 min-w-[180px] bg-[#0d1117] border border-gray-700/70 rounded-md shadow-xl py-1 text-[12px] text-gray-200"
+          style={{ left: menu.x, top: menu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <MenuItem
+            label="Close"
+            onClick={() => {
+              onClose(menu.tabId);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label="Close others"
+            onClick={() => {
+              onBulkClose('others', menu.tabId);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label="Close to the right"
+            onClick={() => {
+              onBulkClose('right', menu.tabId);
+              setMenu(null);
+            }}
+          />
+          <MenuItem
+            label="Close all"
+            onClick={() => {
+              onBulkClose('all', menu.tabId);
+              setMenu(null);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left px-3 py-1 hover:bg-violet-500/20 hover:text-violet-100"
+    >
+      {label}
+    </button>
   );
 }
