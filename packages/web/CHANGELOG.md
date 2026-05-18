@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.7.1] — 2026-05-18
+
+### Added
+
+- **web,native:** Split pane + onaftersave + toggle inline-styled
+
+### Fixed
+
+- **native:** Activity bar invisible on android
+
 ## [0.7.0] — 2026-05-17
 
 ### Added
