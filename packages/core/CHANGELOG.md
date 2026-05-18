@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.9.0] — 2026-05-18
+
+### Added
+
+- **core,web,native:** M1/m2/m3/m5/m6 polish
+
 ## [0.8.0] — 2026-05-18
 
 ### Added
