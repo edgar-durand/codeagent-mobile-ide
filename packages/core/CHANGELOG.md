@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.11.1] — 2026-05-18
+
+### Fixed
+
+- **web,native:** Icon theme persisted state survives reload
+
 ## [0.11.0] — 2026-05-18
 
 ### Added
