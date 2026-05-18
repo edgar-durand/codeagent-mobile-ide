@@ -16,27 +16,35 @@ import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
 /**
  * Storage key for the active file-icon theme. Holds either `null`
  * (no icon theme — FileTreeSidebar falls back to the default
- * emoji glyphs) or an object carrying the parsed VS Code icon-
- * theme JSON + the base URL its `iconPath` entries resolve against.
- * Persisting both means the FileTreeSidebar can rebuild the
- * resolver on a cold mount without re-fetching from the network.
+ * emoji glyphs) or just `{ id, url }` — a POINTER to the theme,
+ * not the theme JSON itself.
+ *
+ * Earlier versions stored the parsed VS Code icon-theme JSON
+ * inline. Real-world themes are huge (Material Icon Theme is
+ * 307 KB), and combined with other zustand-persisted state the
+ * 5 MB localStorage quota tripped on some users; `setItem` then
+ * silently threw QuotaExceededError and the theme didn't survive
+ * a reload. Storing the URL only keeps the persisted record at
+ * a few hundred bytes; `useIconResolver` re-fetches the JSON on
+ * mount, served from the browser cache for any sensible CDN.
  */
 export const ACTIVE_ICON_THEME_STORE_KEY = 'editor.iconTheme';
 
 export interface ActiveIconTheme {
   /** Display name (the marketplace entry's `name`). */
   id: string;
-  /** Parsed `*-icon-theme.json` payload. */
-  theme: VSCodeIconTheme;
-  /** Base URL the relative `iconPath` entries resolve against. */
-  baseUrl: string;
+  /** Direct URL to the upstream `*-icon-theme.json`. */
+  url: string;
 }
 
-function deriveBaseUrl(jsonUrl: string): string {
-  // The VS Code icon-theme contract places `iconPath` entries
-  // RELATIVE to the theme JSON's own folder. Stripping the
-  // filename component yields the directory URL `new URL()` then
-  // joins against.
+/**
+ * Strip the JSON's filename to derive the base URL that relative
+ * `iconPath` entries resolve against. VS Code icon themes place
+ * `./icons/foo.svg` references RELATIVE to the JSON's own folder.
+ * Exported so `useIconResolver` can re-derive it from a stored URL
+ * pointer without persisting baseUrl separately.
+ */
+export function deriveIconThemeBaseUrl(jsonUrl: string): string {
   return jsonUrl.replace(/[^/]+$/, '');
 }
 
@@ -135,15 +143,17 @@ export function MarketplacePanel({
       return next;
     });
     try {
+      // Validate by fetching + parsing once at install time so we
+      // surface bad URLs / malformed JSON to the user immediately
+      // instead of silently failing later when the icon tree
+      // tries to render. We then DISCARD the parsed theme — only
+      // the URL is persisted. See ACTIVE_ICON_THEME_STORE_KEY for
+      // the rationale (localStorage quota).
       const res = await fetch(ref.url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      const theme = parseJsonc<VSCodeIconTheme>(text);
-      const payload: ActiveIconTheme = {
-        id: ref.name,
-        theme,
-        baseUrl: deriveBaseUrl(ref.url),
-      };
+      parseJsonc<VSCodeIconTheme>(text);
+      const payload: ActiveIconTheme = { id: ref.name, url: ref.url };
       await store.set(ACTIVE_ICON_THEME_STORE_KEY, payload);
     } catch (e) {
       setErrorByName((prev) => ({

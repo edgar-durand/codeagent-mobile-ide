@@ -25,6 +25,7 @@ export { ConflictBanner } from './components/ConflictBanner';
 export {
   MarketplacePanel,
   ACTIVE_ICON_THEME_STORE_KEY,
+  deriveIconThemeBaseUrl,
   type ActiveIconTheme,
 } from './components/MarketplacePanel';
 export { useIconResolver } from './hooks/useIconResolver';

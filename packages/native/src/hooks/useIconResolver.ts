@@ -1,42 +1,52 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   buildIconResolver,
+  parseJsonc,
   type FileIconResolver,
   type SettingsStore,
   type VSCodeIconTheme,
 } from '@codeam/ide-core';
 import {
   ACTIVE_ICON_THEME_STORE_KEY,
+  deriveIconThemeBaseUrl,
   type ActiveIconTheme,
 } from '../components/MarketplacePanel';
 
 /**
  * Native mirror of the web `useIconResolver`. Subscribes to the
- * SettingsStore's `editor.iconTheme` key and returns a live
- * FileIconResolver wired to the active icon pack. `null` when no
- * icon theme is installed — FileTreeSidebar falls back to its
- * default Ionicons glyph in that case.
+ * active icon-theme pointer (`{ id, url }`) in the SettingsStore,
+ * re-fetches the upstream theme JSON whenever the pointer changes,
+ * and returns a memoised `FileIconResolver`. Returns `null` while
+ * loading or when no theme is installed — FileTreeSidebar treats
+ * that as "fall back to default Ionicons glyphs".
  *
- * The resolver memoises on the parsed payload identity so the hot
- * tree-render path doesn't re-build the lookup table per row.
+ * Why fetch-on-mount instead of persisting the full JSON:
+ * Material Icon Theme alone is ~300 KB. AsyncStorage in RN has
+ * per-row caps that vary by platform (Android default 6 MB total,
+ * iOS encrypted store ~unlimited but slow). Storing only the URL
+ * keeps the persisted record at a few hundred bytes; the theme
+ * JSON is fetched on demand and served from the WebView's cache
+ * after the first hit.
  */
 export function useIconResolver(store: SettingsStore | null): FileIconResolver | null {
   const [active, setActive] = useState<ActiveIconTheme | null>(null);
+  const [resolver, setResolver] = useState<FileIconResolver | null>(null);
+
   useEffect(() => {
     if (!store) return;
     let cancelled = false;
     void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
       if (cancelled) return;
-      if (v && typeof v === 'object' && 'id' in v) {
-        setActive(v as ActiveIconTheme);
-      } else {
-        setActive(null);
-      }
+      setActive(
+        v && typeof v === 'object' && 'id' in v && 'url' in v
+          ? (v as ActiveIconTheme)
+          : null,
+      );
     });
     const off = store.watch((key, value) => {
       if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
       setActive(
-        value && typeof value === 'object' && 'id' in value
+        value && typeof value === 'object' && 'id' in value && 'url' in value
           ? (value as ActiveIconTheme)
           : null,
       );
@@ -47,8 +57,29 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
     };
   }, [store]);
 
-  return useMemo(() => {
-    if (!active) return null;
-    return buildIconResolver(active.theme as VSCodeIconTheme, active.baseUrl);
+  useEffect(() => {
+    if (!active) {
+      setResolver(null);
+      return;
+    }
+    let cancelled = false;
+    void fetch(active.url)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((text) => {
+        if (cancelled) return;
+        const theme = parseJsonc<VSCodeIconTheme>(text);
+        setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
+      })
+      .catch(() => {
+        if (!cancelled) setResolver(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [active]);
+
+  return resolver;
 }

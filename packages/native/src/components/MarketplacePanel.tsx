@@ -22,15 +22,21 @@ import {
 } from '@codeam/ide-core';
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
 
+/**
+ * Persisted pointer to the active icon theme. Only the upstream
+ * URL is stored — the full JSON is re-fetched at hook-mount time
+ * to keep within the host's storage quota (AsyncStorage on RN is
+ * less tight than the web's 5 MB localStorage, but persisting a
+ * 300 KB theme JSON on every device is wasteful regardless).
+ */
 export const ACTIVE_ICON_THEME_STORE_KEY = 'editor.iconTheme';
 
 export interface ActiveIconTheme {
   id: string;
-  theme: VSCodeIconTheme;
-  baseUrl: string;
+  url: string;
 }
 
-function deriveBaseUrl(jsonUrl: string): string {
+export function deriveIconThemeBaseUrl(jsonUrl: string): string {
   return jsonUrl.replace(/[^/]+$/, '');
 }
 
@@ -118,12 +124,12 @@ export function MarketplacePanel({
       const res = await fetch(ref.url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      const theme = parseJsonc<VSCodeIconTheme>(text);
-      const payload: ActiveIconTheme = {
-        id: ref.name,
-        theme,
-        baseUrl: deriveBaseUrl(ref.url),
-      };
+      // Validate parse — discard the result. We persist only the
+      // URL pointer; useIconResolver re-fetches on mount. This
+      // avoids exhausting AsyncStorage (some platforms cap rows at
+      // 6 MB) and matches the web fix.
+      parseJsonc<VSCodeIconTheme>(text);
+      const payload: ActiveIconTheme = { id: ref.name, url: ref.url };
       await store.set(ACTIVE_ICON_THEME_STORE_KEY, payload);
     } catch (e) {
       setErrorByName((prev) => ({

@@ -24,6 +24,7 @@ export { useMonacoThemes } from './hooks/useMonacoThemes';
 export { useIconResolver } from './hooks/useIconResolver';
 export {
   ACTIVE_ICON_THEME_STORE_KEY,
+  deriveIconThemeBaseUrl,
   type ActiveIconTheme,
 } from './components/MarketplacePanel';
 export { TerminalPanel } from './components/TerminalPanel';
