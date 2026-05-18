@@ -98,7 +98,7 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
   const [status, setStatus] = useState<GitStatusPayload | null>(null);
   const [log, setLog] = useState<GitLogEntry[] | null>(null);
   const [reloadCounter, setReloadCounter] = useState(0);
-  const [busy, setBusy] = useState<'commit' | null>(null);
+  const [busy, setBusy] = useState<'commit' | 'push' | 'pull' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -165,6 +165,41 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
     }
   };
 
+  const onPush = async () => {
+    setBusy('push');
+    try {
+      const r = await providerRef.current.push();
+      if ('error' in r) flash('err', r.error);
+      else {
+        flash('ok', 'Pushed.');
+        reload();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * Pull = `provider.pull()` when implemented; otherwise fall back
+   * to `fetch()` and surface a hint that the user needs to merge /
+   * rebase manually. Mirrors the way VS Code's Source Control view
+   * degrades when the provider doesn't expose a one-shot pull.
+   */
+  const onPull = async () => {
+    setBusy('pull');
+    try {
+      const pull = providerRef.current.pull;
+      const r = pull ? await pull.call(providerRef.current) : await providerRef.current.fetch();
+      if ('error' in r) flash('err', r.error);
+      else {
+        flash('ok', pull ? 'Pulled.' : 'Fetched (manual merge required).');
+        reload();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const entries = status?.entries ?? [];
   const canCommit = entries.length > 0 && message.trim().length > 0 && busy === null;
   const branchLabel = status?.branch ?? 'main';
@@ -210,6 +245,22 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
               onClick={() => void onCommit()}
             >
               <CheckIcon />
+            </IconButton>
+            <IconButton
+              title={status?.behind ? `Pull (${status.behind} behind)` : 'Pull'}
+              ariaLabel="Pull"
+              disabled={busy !== null || !status?.upstream}
+              onClick={() => void onPull()}
+            >
+              <ArrowDownIcon />
+            </IconButton>
+            <IconButton
+              title={status?.ahead ? `Push (${status.ahead} ahead)` : 'Push'}
+              ariaLabel="Push"
+              disabled={busy !== null || !status?.upstream}
+              onClick={() => void onPush()}
+            >
+              <ArrowUpIcon />
             </IconButton>
             <IconButton title="Refresh" ariaLabel="Refresh" onClick={reload}>
               <RefreshIcon />
@@ -443,6 +494,22 @@ function RefreshIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <path d="M2.85 7.5a5.15 5.15 0 0 1 8.78-3.65l1.13-1.13.71.71-2.13 2.13-2.13-2.13.71-.71 1 1A4.15 4.15 0 1 0 11.86 9h1.02A5.15 5.15 0 1 1 2.85 7.5z" />
+    </svg>
+  );
+}
+
+function ArrowUpIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 2.75a.75.75 0 0 1 .53.22l4.5 4.5a.75.75 0 1 1-1.06 1.06L8.75 5.31V13a.75.75 0 0 1-1.5 0V5.31L4.03 8.53a.75.75 0 0 1-1.06-1.06l4.5-4.5A.75.75 0 0 1 8 2.75z" />
+    </svg>
+  );
+}
+
+function ArrowDownIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 13.25a.75.75 0 0 1-.53-.22l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 1.5 0v7.69l3.22-3.22a.75.75 0 0 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-.53.22z" />
     </svg>
   );
 }

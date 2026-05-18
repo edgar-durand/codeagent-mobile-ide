@@ -94,7 +94,7 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
   const [status, setStatus] = useState<GitStatusPayload | null>(null);
   const [log, setLog] = useState<GitLogEntry[] | null>(null);
   const [reloadCounter, setReloadCounter] = useState(0);
-  const [busy, setBusy] = useState<'commit' | null>(null);
+  const [busy, setBusy] = useState<'commit' | 'push' | 'pull' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -160,6 +160,35 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
     }
   };
 
+  const onPush = async () => {
+    setBusy('push');
+    try {
+      const r = await providerRef.current.push();
+      if ('error' in r) flash('err', r.error);
+      else {
+        flash('ok', 'Pushed.');
+        reload();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onPull = async () => {
+    setBusy('pull');
+    try {
+      const pull = providerRef.current.pull;
+      const r = pull ? await pull.call(providerRef.current) : await providerRef.current.fetch();
+      if ('error' in r) flash('err', r.error);
+      else {
+        flash('ok', pull ? 'Pulled.' : 'Fetched (manual merge required).');
+        reload();
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const entries = status?.entries ?? [];
   const canCommit = entries.length > 0 && message.trim().length > 0 && busy === null;
   const branchLabel = status?.branch ?? 'main';
@@ -206,6 +235,16 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
                 </Pressable>
                 <View style={styles.actionRow}>
                   <IconBtn name="checkmark" disabled={!canCommit} onPress={() => void onCommit()} />
+                  <IconBtn
+                    name="arrow-down"
+                    disabled={busy !== null || !status?.upstream}
+                    onPress={() => void onPull()}
+                  />
+                  <IconBtn
+                    name="arrow-up"
+                    disabled={busy !== null || !status?.upstream}
+                    onPress={() => void onPush()}
+                  />
                   <IconBtn name="refresh" onPress={reload} />
                   <IconBtn name="ellipsis-horizontal" />
                 </View>
@@ -347,7 +386,7 @@ function IconBtn({
   onPress,
   disabled,
 }: {
-  name: 'checkmark' | 'refresh' | 'ellipsis-horizontal';
+  name: 'checkmark' | 'refresh' | 'ellipsis-horizontal' | 'arrow-up' | 'arrow-down';
   onPress?: () => void;
   disabled?: boolean;
 }) {

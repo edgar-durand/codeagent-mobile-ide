@@ -63,6 +63,13 @@ export interface GitProvider {
   commit(options: GitCommitOptions): Promise<{ sha: string } | { error: string }>;
   push(): Promise<{ ok: true } | { error: string }>;
   fetch(): Promise<{ ok: true } | { error: string }>;
+  /**
+   * Optional `pull` (fetch + fast-forward / merge). Providers that
+   * model pull as a separate operation can implement it; the
+   * SourceControlPanel falls back to `fetch()` followed by a UI
+   * hint when this is omitted.
+   */
+  pull?(): Promise<{ ok: true } | { error: string }>;
   /** Optional commit-log accessor. When defined, the Source Control
    * panel renders a Graph section underneath the commit composer. */
   log?(limit?: number): Promise<GitLogEntry[]>;
