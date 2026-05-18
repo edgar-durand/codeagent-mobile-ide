@@ -10,8 +10,10 @@ import {
 import {
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_THEME_CHOICES,
+  MARKETPLACE_THEMES,
   vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
+  type MarketplaceThemeRef,
   type MonacoTheme,
   type SettingsStore,
   type VSCodeColorTheme,
@@ -28,6 +30,7 @@ interface Props {
   store?: SettingsStore | null;
   themes?: { id: string; label: string }[];
   allowThemeImport?: boolean;
+  marketplaceThemes?: readonly MarketplaceThemeRef[];
 }
 
 function isSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
@@ -48,6 +51,7 @@ export function SettingsPanel({
   store,
   themes = [...DEFAULT_THEME_CHOICES],
   allowThemeImport = true,
+  marketplaceThemes = MARKETPLACE_THEMES,
 }: Props) {
   const [settings, setSettings] = useState<EditorSettingsSnapshot>(DEFAULT_EDITOR_SETTINGS);
   const [customThemes, setCustomThemes] = useState<MonacoTheme[]>([]);
@@ -83,6 +87,25 @@ export function SettingsPanel({
     const next = { ...settings, ...patch };
     setSettings(next);
     if (store) void store.set('editor', next);
+  };
+
+  const installMarketplaceTheme = async (ref: MarketplaceThemeRef) => {
+    setImportError(null);
+    try {
+      const res = await fetch(ref.url);
+      if (!res.ok) {
+        setImportError(`Could not fetch ${ref.name} (HTTP ${res.status}).`);
+        return;
+      }
+      const raw = (await res.json()) as VSCodeColorTheme;
+      const theme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
+      const next = [...customThemes.filter((t) => t.name !== theme.name), theme];
+      setCustomThemes(next);
+      if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
+      update({ theme: theme.name });
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Failed to install theme');
+    }
   };
 
   const onImportTheme = () => {
@@ -151,6 +174,38 @@ export function SettingsPanel({
               </Pressable>
             ))}
           </View>
+          {marketplaceThemes.length > 0 && (
+            <View style={styles.importedList}>
+              <Text style={styles.importedLabel}>Popular themes (marketplace)</Text>
+              {marketplaceThemes.map((m) => {
+                const active = settings.theme === m.name;
+                const installed = customThemes.some((t) => t.name === m.name);
+                return (
+                  <Pressable
+                    key={m.name}
+                    onPress={() => void installMarketplaceTheme(m)}
+                    style={[
+                      styles.marketplaceRow,
+                      active && styles.marketplaceRowActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.marketplaceName,
+                        active && styles.marketplaceNameActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {m.name}
+                    </Text>
+                    <Text style={styles.marketplaceState}>
+                      {active ? '● active' : installed ? '✓ installed' : 'install'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
           {customThemes.length > 0 && (
             <View style={styles.importedList}>
               <Text style={styles.importedLabel}>Imported themes</Text>
@@ -422,4 +477,21 @@ const styles = StyleSheet.create({
     borderColor: '#374151',
   },
   importTriggerText: { color: '#d1d5db', fontSize: 11 },
+  marketplaceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  marketplaceRowActive: {
+    backgroundColor: 'rgba(124,58,237,0.25)',
+    borderColor: '#a78bfa',
+  },
+  marketplaceName: { flex: 1, color: '#d1d5db', fontSize: 11 },
+  marketplaceNameActive: { color: '#ede9fe' },
+  marketplaceState: { color: '#6b7280', fontSize: 10, marginLeft: 8 },
 });

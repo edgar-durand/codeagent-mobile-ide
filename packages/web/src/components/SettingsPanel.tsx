@@ -2,8 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import {
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_THEME_CHOICES,
+  MARKETPLACE_THEMES,
   vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
+  type MarketplaceThemeRef,
   type MonacoTheme,
   type SettingsStore,
   type VSCodeColorTheme,
@@ -31,6 +33,12 @@ interface Props {
    * pasting arbitrary JSON.
    */
   allowThemeImport?: boolean;
+  /**
+   * Curated list of one-click marketplace themes. Defaults to
+   * core's `MARKETPLACE_THEMES`. Pass an empty array to hide the
+   * "Popular themes" section entirely.
+   */
+  marketplaceThemes?: readonly MarketplaceThemeRef[];
 }
 
 function isEditorSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
@@ -51,6 +59,7 @@ export function SettingsPanel({
   store,
   themes = [...DEFAULT_THEME_CHOICES],
   allowThemeImport = true,
+  marketplaceThemes = MARKETPLACE_THEMES,
 }: Props) {
   const [settings, setSettings] = useState<EditorSettingsSnapshot>(DEFAULT_EDITOR_SETTINGS);
   const [customThemes, setCustomThemes] = useState<MonacoTheme[]>([]);
@@ -90,6 +99,35 @@ export function SettingsPanel({
     const next = { ...settings, ...patch };
     setSettings(next);
     if (store) void store.set('editor', next);
+  };
+
+  /**
+   * Fetch + register a curated marketplace theme by its URL. Same
+   * code path as the "Import VS Code theme…" textarea — we just
+   * grab the JSON from the network instead of asking the user to
+   * paste it. Errors surface in `importError` so the user sees why
+   * a particular theme didn't load (CORS / 404 / malformed JSON).
+   */
+  const installMarketplaceTheme = async (ref: MarketplaceThemeRef) => {
+    setImportError(null);
+    try {
+      const res = await fetch(ref.url);
+      if (!res.ok) {
+        setImportError(`Could not fetch ${ref.name} (HTTP ${res.status}).`);
+        return;
+      }
+      const raw = (await res.json()) as VSCodeColorTheme;
+      // Force the converter to use the marketplace display name so
+      // entries appear consistently in the picker regardless of
+      // what the upstream JSON's `name` field says.
+      const theme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
+      const next = [...customThemes.filter((t) => t.name !== theme.name), theme];
+      setCustomThemes(next);
+      if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
+      update({ theme: theme.name });
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Failed to install theme');
+    }
   };
 
   const onImportTheme = () => {
@@ -162,6 +200,36 @@ export function SettingsPanel({
               ))}
             </select>
           </Field>
+          {marketplaceThemes.length > 0 && (
+            <div className="flex flex-col gap-1 pl-1">
+              <span className="text-[10px] uppercase tracking-wider text-gray-500">
+                Popular themes (marketplace)
+              </span>
+              {marketplaceThemes.map((m) => {
+                const installed = customThemes.some((t) => t.name === m.name);
+                const active = settings.theme === m.name;
+                return (
+                  <button
+                    key={m.name}
+                    type="button"
+                    onClick={() => void installMarketplaceTheme(m)}
+                    className={[
+                      'flex items-center justify-between text-[11px] py-1 px-2 rounded transition-colors',
+                      active
+                        ? 'bg-violet-500/30 text-violet-100 border border-violet-500/60'
+                        : 'text-gray-300 hover:bg-gray-800/60 hover:text-gray-100 border border-transparent',
+                    ].join(' ')}
+                    title={m.homepage ?? m.url}
+                  >
+                    <span className="truncate">{m.name}</span>
+                    <span className="text-[10px] text-gray-500 ml-2 shrink-0">
+                      {active ? '● active' : installed ? '✓ installed' : 'install'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {customThemes.length > 0 && (
             <div className="flex flex-col gap-1 pl-1">
               <span className="text-[10px] uppercase tracking-wider text-gray-500">

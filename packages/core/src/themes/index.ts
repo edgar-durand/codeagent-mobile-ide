@@ -41,3 +41,65 @@ export const DEFAULT_THEME_CHOICES: readonly { id: string; label: string }[] = [
 ];
 
 export { githubDarkTheme, githubLightTheme };
+
+/**
+ * Curated list of popular VS Code marketplace themes the
+ * SettingsPanel surfaces in a "Popular themes" row. Each entry
+ * points at the theme's official JSON inside the theme author's
+ * own public GitHub repo (raw.githubusercontent.com served with
+ * permissive CORS) so the panel can fetch + register on a single
+ * click — no .vsix dance, no copy-paste.
+ *
+ * Inclusion criteria:
+ * - MIT (or comparably permissive) license on the upstream repo.
+ * - JSON theme file directly fetchable, no preprocessor (YAML →
+ *   JSON build step) needed.
+ * - Active maintenance — at least one update in the past year.
+ *
+ * Adding a theme: just push another `{ name, url }` entry. The
+ * UI doesn't bundle theme JSON; everything fetches at runtime,
+ * so the library tarball stays small.
+ */
+export interface MarketplaceThemeRef {
+  /** Display name shown in the picker. */
+  name: string;
+  /** Direct URL to the *-color-theme.json. CORS must permit
+   * cross-origin fetch from a browser (raw.githubusercontent.com
+   * does; some CDNs don't). */
+  url: string;
+  /** Optional homepage / repo URL for credit / "view source". */
+  homepage?: string;
+}
+
+export const MARKETPLACE_THEMES: readonly MarketplaceThemeRef[] = [
+  {
+    name: 'One Dark Pro',
+    url: 'https://raw.githubusercontent.com/Binaryify/OneDark-Pro/master/themes/OneDark-Pro.json',
+    homepage: 'https://github.com/Binaryify/OneDark-Pro',
+  },
+  {
+    name: 'Night Owl',
+    url: 'https://raw.githubusercontent.com/sdras/night-owl-vscode-theme/master/themes/Night%20Owl-color-theme.json',
+    homepage: 'https://github.com/sdras/night-owl-vscode-theme',
+  },
+  {
+    name: 'Cobalt2',
+    url: 'https://raw.githubusercontent.com/wesbos/cobalt2-vscode/master/theme/cobalt2.json',
+    homepage: 'https://github.com/wesbos/cobalt2-vscode',
+  },
+  {
+    name: 'SynthWave \'84',
+    url: 'https://raw.githubusercontent.com/robb0wen/synthwave-vscode/master/themes/synthwave-color-theme.json',
+    homepage: 'https://github.com/robb0wen/synthwave-vscode',
+  },
+  {
+    name: 'Tokyo Night',
+    url: 'https://raw.githubusercontent.com/enkia/tokyo-night-vscode-theme/master/themes/tokyo-night-color-theme.json',
+    homepage: 'https://github.com/enkia/tokyo-night-vscode-theme',
+  },
+  {
+    name: 'Andromeda',
+    url: 'https://raw.githubusercontent.com/EliverLara/Andromeda/master/themes/andromeda-color-theme.json',
+    homepage: 'https://github.com/EliverLara/Andromeda',
+  },
+];

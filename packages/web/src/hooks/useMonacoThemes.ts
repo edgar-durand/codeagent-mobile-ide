@@ -11,23 +11,23 @@ import { CUSTOM_THEMES_STORE_KEY } from '../components/SettingsPanel';
  * `monaco-editor` as a peer dep — the consumer passes whatever
  * Monaco instance `@monaco-editor/react`'s `onMount` handed them.
  *
- * `themeData` typed as a structural subset of Monaco's
- * `IStandaloneThemeData`. The `rules` / `colors` fields are widened
- * to `unknown[]` / `Record<string, string>` so a Monaco namespace
- * with a stricter `IStandaloneThemeData` (from monaco-editor's own
- * d.ts) is assignable to this interface without a cast.
+ * `themeData` is typed as `unknown` for the call site. Function
+ * parameters are contravariant, so a real Monaco namespace whose
+ * `defineTheme` declares the stricter `IStandaloneThemeData` is
+ * STILL assignable to this interface — we just promise to pass it
+ * a value Monaco can handle. The runtime payload is the
+ * `MonacoTheme` shape from core, which IS structurally a valid
+ * `IStandaloneThemeData`.
+ *
+ * The earlier shape (typed-rules-and-colors literal) flipped the
+ * variance the wrong way: Monaco's mutable `rules: ITokenThemeRule[]`
+ * couldn't widen into our `readonly unknown[]`, breaking the
+ * landing's `tsc -b` step.
  */
 interface MonacoLike {
   editor: {
-    defineTheme: (
-      themeName: string,
-      themeData: {
-        base: 'vs' | 'vs-dark' | 'hc-black' | 'hc-light';
-        inherit: boolean;
-        rules: ReadonlyArray<unknown>;
-        colors: Record<string, string>;
-      },
-    ) => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    defineTheme: (themeName: string, themeData: any) => void;
     setTheme: (themeName: string) => void;
   };
 }
