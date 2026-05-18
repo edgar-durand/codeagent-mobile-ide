@@ -22,6 +22,7 @@ export { SourceControlPanel } from './components/SourceControlPanel';
 export { SearchPanel } from './components/SearchPanel';
 export { SettingsPanel, CUSTOM_THEMES_STORE_KEY } from './components/SettingsPanel';
 export { ConflictBanner } from './components/ConflictBanner';
+export { MarketplacePanel } from './components/MarketplacePanel';
 export { TabsBar } from './components/TabsBar';
 export type { EditorTab } from './components/TabsBar';
 export { InlineEditor } from './components/InlineEditor';

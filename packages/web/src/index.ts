@@ -28,3 +28,4 @@ export { Breadcrumbs } from './components/Breadcrumbs';
 export { DiffViewer, reconstructOriginal } from './components/DiffViewer';
 export { SplitPane } from './components/SplitPane';
 export { ConflictBanner } from './components/ConflictBanner';
+export { MarketplacePanel } from './components/MarketplacePanel';
