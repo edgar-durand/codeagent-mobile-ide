@@ -51,3 +51,30 @@ export { DEFAULT_EDITOR_SETTINGS } from './types/settings';
 export type { IdeAdapters } from './types/adapters';
 
 export { detectLanguage, LANGUAGE_BY_EXTENSION } from './language-detection';
+
+export type {
+  MonacoTheme,
+  ThemeRule,
+  VSCodeColorTheme,
+  VSCodeTokenColor,
+} from './types/theme';
+export { vscodeThemeToMonaco } from './types/theme';
+
+export {
+  BUILTIN_MONACO_THEMES,
+  BUNDLED_CUSTOM_THEMES,
+  DEFAULT_THEME_CHOICES,
+  githubDarkTheme,
+  githubLightTheme,
+} from './themes';
+
+export type { ConflictHunk } from './utils/conflicts';
+export {
+  acceptBoth,
+  acceptCurrent,
+  acceptIncoming,
+  applyConflictResolution,
+  applyConflictResolutionAll,
+  detectConflicts,
+  hasConflictMarkers,
+} from './utils/conflicts';

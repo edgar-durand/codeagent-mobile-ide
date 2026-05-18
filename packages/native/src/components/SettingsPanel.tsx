@@ -9,20 +9,26 @@ import {
 } from 'react-native';
 import {
   DEFAULT_EDITOR_SETTINGS,
+  DEFAULT_THEME_CHOICES,
+  vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
+  type MonacoTheme,
   type SettingsStore,
+  type VSCodeColorTheme,
 } from '@codeam/ide-core';
+
+/**
+ * Storage key for user-imported themes — kept byte-identical to the
+ * web SettingsPanel so a sync'd `SettingsStore` round-trips between
+ * platforms.
+ */
+export const CUSTOM_THEMES_STORE_KEY = 'editor.customThemes';
 
 interface Props {
   store?: SettingsStore | null;
   themes?: { id: string; label: string }[];
+  allowThemeImport?: boolean;
 }
-
-const DEFAULT_THEMES: { id: string; label: string }[] = [
-  { id: 'vs-dark', label: 'Dark (Visual Studio)' },
-  { id: 'vs-light', label: 'Light (Visual Studio)' },
-  { id: 'hc-black', label: 'High Contrast Dark' },
-];
 
 function isSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
   return typeof v === 'object' && v !== null;
@@ -38,8 +44,16 @@ function isSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
  * pulling another dep, so the theme picker is a horizontal pill
  * row (taps to cycle).
  */
-export function SettingsPanel({ store, themes = DEFAULT_THEMES }: Props) {
+export function SettingsPanel({
+  store,
+  themes = [...DEFAULT_THEME_CHOICES],
+  allowThemeImport = true,
+}: Props) {
   const [settings, setSettings] = useState<EditorSettingsSnapshot>(DEFAULT_EDITOR_SETTINGS);
+  const [customThemes, setCustomThemes] = useState<MonacoTheme[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importInput, setImportInput] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!store) return;
@@ -48,9 +62,16 @@ export function SettingsPanel({ store, themes = DEFAULT_THEMES }: Props) {
       if (cancelled) return;
       if (isSnapshot(v)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...v });
     });
+    void store.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
+      if (cancelled) return;
+      if (Array.isArray(v)) setCustomThemes(v as MonacoTheme[]);
+    });
     const off = store.watch((key, value) => {
-      if (key !== 'editor') return;
-      if (isSnapshot(value)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+      if (key === 'editor' && isSnapshot(value)) {
+        setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+      } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+        setCustomThemes(value as MonacoTheme[]);
+      }
     });
     return () => {
       cancelled = true;
@@ -64,6 +85,46 @@ export function SettingsPanel({ store, themes = DEFAULT_THEMES }: Props) {
     if (store) void store.set('editor', next);
   };
 
+  const onImportTheme = () => {
+    setImportError(null);
+    const trimmed = importInput.trim();
+    if (!trimmed) {
+      setImportError('Paste a VS Code color-theme JSON.');
+      return;
+    }
+    try {
+      const raw = JSON.parse(trimmed) as VSCodeColorTheme;
+      if (
+        (!raw.tokenColors || raw.tokenColors.length === 0) &&
+        (!raw.colors || Object.keys(raw.colors).length === 0)
+      ) {
+        setImportError('Not a VS Code color theme — no colors or tokenColors.');
+        return;
+      }
+      const theme = vscodeThemeToMonaco(raw, `imported-${Date.now()}`);
+      const next = [...customThemes.filter((t) => t.name !== theme.name), theme];
+      setCustomThemes(next);
+      if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
+      update({ theme: theme.name });
+      setImportInput('');
+      setImportOpen(false);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Invalid JSON');
+    }
+  };
+
+  const onRemoveCustomTheme = (name: string) => {
+    const next = customThemes.filter((t) => t.name !== name);
+    setCustomThemes(next);
+    if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
+    if (settings.theme === name) update({ theme: 'vs-dark' });
+  };
+
+  const themeChoices = [
+    ...themes,
+    ...customThemes.map((t) => ({ id: t.name, label: t.name })),
+  ];
+
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
@@ -73,7 +134,7 @@ export function SettingsPanel({ store, themes = DEFAULT_THEMES }: Props) {
         <Section title="Appearance">
           <Text style={styles.fieldLabel}>Color theme</Text>
           <View style={styles.themeRow}>
-            {themes.map((t) => (
+            {themeChoices.map((t) => (
               <Pressable
                 key={t.id}
                 onPress={() => update({ theme: t.id })}
@@ -90,6 +151,54 @@ export function SettingsPanel({ store, themes = DEFAULT_THEMES }: Props) {
               </Pressable>
             ))}
           </View>
+          {customThemes.length > 0 && (
+            <View style={styles.importedList}>
+              <Text style={styles.importedLabel}>Imported themes</Text>
+              {customThemes.map((t) => (
+                <View key={t.name} style={styles.importedRow}>
+                  <Text style={styles.importedName} numberOfLines={1}>
+                    {t.name}
+                  </Text>
+                  <Pressable onPress={() => onRemoveCustomTheme(t.name)}>
+                    <Text style={styles.removeText}>Remove</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+          {allowThemeImport &&
+            (importOpen ? (
+              <View style={styles.importBox}>
+                <TextInput
+                  value={importInput}
+                  onChangeText={setImportInput}
+                  placeholder="Paste a *-color-theme.json"
+                  placeholderTextColor="#6b7280"
+                  multiline
+                  style={styles.importInput}
+                />
+                {importError && <Text style={styles.importError}>{importError}</Text>}
+                <View style={styles.importBtnRow}>
+                  <Pressable onPress={onImportTheme} style={styles.importBtnPrimary}>
+                    <Text style={styles.importBtnPrimaryText}>Import</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setImportOpen(false);
+                      setImportInput('');
+                      setImportError(null);
+                    }}
+                    style={styles.importBtnCancel}
+                  >
+                    <Text style={styles.importBtnCancelText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Pressable onPress={() => setImportOpen(true)} style={styles.importTrigger}>
+                <Text style={styles.importTriggerText}>+ Import VS Code theme…</Text>
+              </Pressable>
+            ))}
         </Section>
 
         <Section title="Editor">
@@ -261,4 +370,56 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   switchThumbOn: { transform: [{ translateX: 16 }] },
+  importedList: { marginTop: 8, paddingLeft: 4, gap: 4 },
+  importedLabel: {
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    color: '#6b7280',
+  },
+  importedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  importedName: { flex: 1, fontSize: 11, color: '#d1d5db' },
+  removeText: { fontSize: 11, color: '#f87171' },
+  importBox: { marginTop: 8, gap: 6, paddingLeft: 4 },
+  importInput: {
+    minHeight: 96,
+    backgroundColor: 'rgba(17,24,39,0.7)',
+    borderWidth: 1,
+    borderColor: '#374151',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    color: '#e5e7eb',
+    fontSize: 11,
+    fontFamily: 'Menlo',
+    textAlignVertical: 'top',
+  },
+  importError: { fontSize: 11, color: '#fda4af' },
+  importBtnRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  importBtnPrimary: {
+    backgroundColor: '#7c3aed',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  importBtnPrimaryText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  importBtnCancel: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  importBtnCancelText: { color: '#9ca3af', fontSize: 11 },
+  importTrigger: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  importTriggerText: { color: '#d1d5db', fontSize: 11 },
 });
