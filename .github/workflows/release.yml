@@ -82,9 +82,22 @@ jobs:
 
       - name: Publish
         working-directory: packages/core
-        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          # Idempotent publish — skip if this exact version is
+          # already in the registry. npm itself returns 403 on
+          # republish, which is correct semantics but causes
+          # spurious red runs whenever a tag is retried for any
+          # reason (e.g. an earlier job partially failed and the
+          # operator force-pushed the tag). With this guard the
+          # downstream changelog + GitHub Release jobs still run.
+          if npm view "@codeam/ide-core@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::@codeam/ide-core@$VERSION already published — skipping npm publish"
+            exit 0
+          fi
+          npm publish --access public
 
   publish-web:
     name: Publish @codeam/ide-web to npm
@@ -142,9 +155,15 @@ jobs:
 
       - name: Publish
         working-directory: packages/web
-        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          if npm view "@codeam/ide-web@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::@codeam/ide-web@$VERSION already published — skipping npm publish"
+            exit 0
+          fi
+          npm publish --access public
 
   publish-native:
     name: Publish @codeam/ide-native to npm
@@ -195,9 +214,15 @@ jobs:
 
       - name: Publish
         working-directory: packages/native
-        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          if npm view "@codeam/ide-native@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::@codeam/ide-native@$VERSION already published — skipping npm publish"
+            exit 0
+          fi
+          npm publish --access public
 
   release:
     name: Draft GitHub Release + commit changelog
