@@ -92,6 +92,17 @@ const styles = StyleSheet.create({
     // section (~144 dp) and the bottom items disappear off-screen
     // for users on phones with shorter viewports.
     alignSelf: 'stretch',
+    // Hoist the bar into its own compositor layer above the sibling
+    // editor / WebView column. On iOS, RN's WebView (used by
+    // InlineEditor's Monaco bridge) renders inside a UIView that
+    // gets composited over adjacent flex children in the body row —
+    // the icons are technically painted but the WebView's layer
+    // sits on top of them until the user interacts with the bar
+    // and RN forces a re-flatten of the view tree. Explicit
+    // `zIndex` (iOS) + `elevation` (Android) keeps the bar's
+    // surface in front from the first frame.
+    zIndex: 10,
+    elevation: 10,
   },
   section: { flexDirection: 'column' },
   bottomSection: {

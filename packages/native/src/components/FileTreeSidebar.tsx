@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,6 +10,24 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+// Optional `react-native-svg` import. The vast majority of VS Code
+// icon themes (Material Icon Theme, vscode-icons, etc.) ship pure
+// SVG assets, and RN's <Image> can't render SVGs natively. We
+// load `SvgUri` lazily so consumers who don't have the peer dep
+// installed still get the JS bundle (the URI branch then falls
+// back to <Image> and the icon shows as blank rather than throws).
+type SvgUriProps = {
+  uri: string;
+  width: number | string;
+  height: number | string;
+};
+let SvgUriComponent: ComponentType<SvgUriProps> | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef
+  SvgUriComponent = (require('react-native-svg') as { SvgUri: ComponentType<SvgUriProps> }).SvgUri;
+} catch {
+  /* peer dep not installed — SVG icons will not render */
+}
 import type {
   FileIconRef,
   FileIconResolver,
@@ -34,6 +52,22 @@ interface Props {
 
 function IconCell({ icon }: { icon: FileIconRef }) {
   if (icon.kind === 'uri') {
+    // VS Code icon themes overwhelmingly use SVG (Material Icon Theme
+    // and vscode-icons are 100 % SVG). RN's `<Image>` decodes via
+    // ImageIO on iOS / BitmapFactory on Android — neither knows how
+    // to rasterise SVG, so the image silently fails to load and the
+    // tree shows the default Ionicons fallback for every row. When
+    // `react-native-svg` is available we route SVG URIs through
+    // `SvgUri`, which renders the actual icon. Non-SVG URIs (PNG /
+    // WebP / data: raster) still go through `<Image>`.
+    const isSvg = /\.svg(\?|#|$)/i.test(icon.uri) || icon.uri.startsWith('data:image/svg');
+    if (isSvg && SvgUriComponent) {
+      return (
+        <View style={{ width: 14, height: 14, marginRight: 4 }}>
+          <SvgUriComponent uri={icon.uri} width={14} height={14} />
+        </View>
+      );
+    }
     return (
       <Image
         source={{ uri: icon.uri }}
