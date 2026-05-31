@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.11.2] — 2026-05-31
+
+### CI
+
+- **workflow:** Make publish steps idempotent on tag retries
+
+### Fixed
+
+- **native:** Render SVG file icons + lift ActivityBar above WebView
+
 ## [0.11.1] — 2026-05-18
 
 ### Fixed
