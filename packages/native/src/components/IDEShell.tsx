@@ -169,8 +169,12 @@ export function IDEShell({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0d12' },
-  body: { flex: 1, flexDirection: 'row' },
-  main: { flex: 1 },
+  // overflow:hidden clips the drawer's bg when it's translated off
+  // the left edge. Without this the drawer's #0d1117 surface can
+  // bleed under the ActivityBar on iOS, making the bar appear empty
+  // when the side panel is "collapsed".
+  body: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
+  main: { flex: 1, minWidth: 0 },
   inlinePanel: {
     borderRightColor: '#1f2433',
     overflow: 'hidden',

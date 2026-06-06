@@ -92,17 +92,25 @@ const styles = StyleSheet.create({
     // section (~144 dp) and the bottom items disappear off-screen
     // for users on phones with shorter viewports.
     alignSelf: 'stretch',
+    // Pin the bar's width so a parent flex row can't shrink it to
+    // zero. Without these the iOS mobile shell occasionally
+    // collapsed the bar to 0 dp once the side panel drawer animated
+    // closed (visible bug: "icons disappear when side nav collapses"
+    // even though ActivityBar is rendered unconditionally).
+    flexShrink: 0,
+    flexGrow: 0,
     // Hoist the bar into its own compositor layer above the sibling
-    // editor / WebView column. On iOS, RN's WebView (used by
-    // InlineEditor's Monaco bridge) renders inside a UIView that
-    // gets composited over adjacent flex children in the body row —
-    // the icons are technically painted but the WebView's layer
-    // sits on top of them until the user interacts with the bar
-    // and RN forces a re-flatten of the view tree. Explicit
-    // `zIndex` (iOS) + `elevation` (Android) keeps the bar's
-    // surface in front from the first frame.
-    zIndex: 10,
-    elevation: 10,
+    // editor / WebView column AND above the drawer overlay (zIndex 20).
+    // On iOS, RN's WebView (used by InlineEditor's Monaco bridge)
+    // renders inside a UIView that gets composited over adjacent flex
+    // children in the body row, and the drawer's translateX(-280) is
+    // applied to the visual frame but the native shadow tree can leak
+    // its background paint a frame before settling — the icons are
+    // painted but the drawer's surface sits on top of them until RN
+    // re-flattens the view tree. Bumping the activity bar's zIndex
+    // above the drawer keeps the bar's surface in front from frame 0.
+    zIndex: 100,
+    elevation: 100,
   },
   section: { flexDirection: 'column' },
   bottomSection: {
