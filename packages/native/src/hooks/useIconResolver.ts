@@ -70,11 +70,31 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
       })
       .then((text) => {
         if (cancelled) return;
-        const theme = parseJsonc<VSCodeIconTheme>(text);
-        setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
+        try {
+          const theme = parseJsonc<VSCodeIconTheme>(text);
+          setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
+        } catch (err) {
+          // Theme JSON downloaded but parse / resolver build failed.
+          // Loud here so users hit by malformed themes can see why
+          // their tree went blank instead of guessing it's a network
+          // issue.
+          console.warn(
+            `[useIconResolver] failed to build resolver from ${active.url}:`,
+            err,
+          );
+          setResolver(null);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setResolver(null);
+      .catch((err) => {
+        // Loud over silent — fetch failures (CORS, 404, DNS) used to
+        // leave the tree blank with no breadcrumb. The user-visible
+        // symptom is "icons disappeared after reinstall"; the
+        // underlying cause is almost always a stale URL pointer or
+        // a marketplace mirror returning HTML.
+        if (!cancelled) {
+          console.warn(`[useIconResolver] fetch ${active.url} failed:`, err);
+          setResolver(null);
+        }
       });
     return () => {
       cancelled = true;

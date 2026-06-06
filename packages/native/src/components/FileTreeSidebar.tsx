@@ -1,8 +1,7 @@
-import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -10,24 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-// Optional `react-native-svg` import. The vast majority of VS Code
-// icon themes (Material Icon Theme, vscode-icons, etc.) ship pure
-// SVG assets, and RN's <Image> can't render SVGs natively. We
-// load `SvgUri` lazily so consumers who don't have the peer dep
-// installed still get the JS bundle (the URI branch then falls
-// back to <Image> and the icon shows as blank rather than throws).
-type SvgUriProps = {
-  uri: string;
-  width: number | string;
-  height: number | string;
-};
-let SvgUriComponent: ComponentType<SvgUriProps> | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef
-  SvgUriComponent = (require('react-native-svg') as { SvgUri: ComponentType<SvgUriProps> }).SvgUri;
-} catch {
-  /* peer dep not installed — SVG icons will not render */
-}
+import { SvgUri } from 'react-native-svg';
 import type {
   FileIconRef,
   FileIconResolver,
@@ -52,28 +34,16 @@ interface Props {
 
 function IconCell({ icon }: { icon: FileIconRef }) {
   if (icon.kind === 'uri') {
-    // VS Code icon themes overwhelmingly use SVG (Material Icon Theme
-    // and vscode-icons are 100 % SVG). RN's `<Image>` decodes via
-    // ImageIO on iOS / BitmapFactory on Android — neither knows how
-    // to rasterise SVG, so the image silently fails to load and the
-    // tree shows the default Ionicons fallback for every row. When
-    // `react-native-svg` is available we route SVG URIs through
-    // `SvgUri`, which renders the actual icon. Non-SVG URIs (PNG /
-    // WebP / data: raster) still go through `<Image>`.
-    const isSvg = /\.svg(\?|#|$)/i.test(icon.uri) || icon.uri.startsWith('data:image/svg');
-    if (isSvg && SvgUriComponent) {
-      return (
-        <View style={{ width: 14, height: 14, marginRight: 4 }}>
-          <SvgUriComponent uri={icon.uri} width={14} height={14} />
-        </View>
-      );
-    }
+    // VS Code icon themes are almost entirely SVG (Material Icon
+    // Theme and vscode-icons are 100% SVG). RN's <Image> can't
+    // rasterise SVG, so we route every URI through SvgUri. Raster
+    // URIs (PNG / WebP) are vanishingly rare in published themes —
+    // if a theme ships one and SvgUri returns blank, swap to the
+    // explicit-content-type branch then.
     return (
-      <Image
-        source={{ uri: icon.uri }}
-        style={{ width: 14, height: 14, marginRight: 4 }}
-        resizeMode="contain"
-      />
+      <View style={{ width: 14, height: 14, marginRight: 4 }}>
+        <SvgUri uri={icon.uri} width={14} height={14} />
+      </View>
     );
   }
   if (icon.kind === 'emoji') {
@@ -273,17 +243,24 @@ export function FileTreeSidebar({
                       color="#6b7280"
                       style={styles.chevron}
                     />
-                    {iconResolver
-                      ? (() => {
-                          const ref = iconResolver.forFolder(item.name, !!item.isOpen);
-                          return ref.kind !== 'none' ? <IconCell icon={ref} /> : null;
-                        })()
-                      : null}
+                    {(() => {
+                      const ref = iconResolver?.forFolder(item.name, !!item.isOpen);
+                      return ref && ref.kind !== 'none' ? (
+                        <IconCell icon={ref} />
+                      ) : (
+                        <Ionicons
+                          name={item.isOpen ? 'folder-open-outline' : 'folder-outline'}
+                          size={12}
+                          color="#9ca3af"
+                          style={styles.chevron}
+                        />
+                      );
+                    })()}
                   </>
-                ) : iconResolver ? (
+                ) : (
                   (() => {
-                    const ref = iconResolver.forFile(item.name);
-                    return ref.kind !== 'none' ? (
+                    const ref = iconResolver?.forFile(item.name);
+                    return ref && ref.kind !== 'none' ? (
                       <IconCell icon={ref} />
                     ) : (
                       <Ionicons
@@ -294,13 +271,6 @@ export function FileTreeSidebar({
                       />
                     );
                   })()
-                ) : (
-                  <Ionicons
-                    name="document-outline"
-                    size={11}
-                    color="#6b7280"
-                    style={styles.chevron}
-                  />
                 )}
                 <Text
                   numberOfLines={1}

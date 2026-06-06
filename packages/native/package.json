@@ -53,11 +53,6 @@
     "react-native-svg": ">=15",
     "react-native-webview": ">=13"
   },
-  "peerDependenciesMeta": {
-    "react-native-svg": {
-      "optional": true
-    }
-  },
   "publishConfig": {
     "access": "public"
   },
