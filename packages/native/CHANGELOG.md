@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.11.4] — 2026-06-06
+
+### Fixed
+
+- **native:** Keep ActivityBar visible when side panel collapses
+
 ## [0.11.3] — 2026-06-06
 
 ### Fixed
