@@ -97,10 +97,12 @@ export function FileViewerHost() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  // Bumped by Retry so the read effect re-runs for the same request/fetcher.
+  const [readAttempt, setReadAttempt] = useState(0);
   const webRef = useRef<WebView>(null);
   const webReadyRef = useRef(false);
 
-  // Reset + fetch when a new request arrives.
+  // Reset + fetch when a new request arrives (or the user retries).
   useEffect(() => {
     if (!request || !fetcher) return;
     setContent(null);
@@ -135,7 +137,9 @@ export function FileViewerHost() {
     return () => {
       cancelled = true;
     };
-  }, [request, fetcher]);
+  }, [request, fetcher, readAttempt]);
+
+  const retry = () => setReadAttempt((n) => n + 1);
 
   const language = useMemo(() => (request ? detectLanguage(request.path) : 'plaintext'), [request]);
   const html = useMemo(
@@ -225,7 +229,9 @@ export function FileViewerHost() {
             </TouchableOpacity>
           </View>
         </View>
-        {error && (
+        {/* With no content on screen the error owns the body (below); the bar
+            is for failures on top of a displayed file (save, editor bridge). */}
+        {error && html !== null && (
           <View style={styles.errorBar}>
             <Text style={styles.errorText} numberOfLines={3}>
               {error}
@@ -233,17 +239,26 @@ export function FileViewerHost() {
           </View>
         )}
         <View style={styles.body}>
-          {loading || html === null ? (
-            <View style={styles.placeholder}>
-              <ActivityIndicator size="small" color="#cbb7ff" />
-              <Text style={styles.placeholderText}>Fetching {request.path}…</Text>
-            </View>
-          ) : !fetcher ? (
+          {!fetcher ? (
             <View style={styles.placeholder}>
               <Ionicons name="cloud-offline-outline" size={28} color="#8b8794" />
               <Text style={styles.placeholderText}>
                 No active session. Pair an IDE plugin or CLI first.
               </Text>
+            </View>
+          ) : loading || (html === null && error === null) ? (
+            <View style={styles.placeholder}>
+              <ActivityIndicator size="small" color="#cbb7ff" />
+              <Text style={styles.placeholderText}>Fetching {request.path}…</Text>
+            </View>
+          ) : html === null ? (
+            <View style={styles.placeholder}>
+              <Ionicons name="alert-circle-outline" size={28} color="#f87171" />
+              <Text style={[styles.placeholderText, styles.verdictText]}>{error}</Text>
+              <TouchableOpacity onPress={retry} style={styles.retryBtn} activeOpacity={0.8}>
+                <Ionicons name="refresh-outline" size={14} color="#fff" />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <WebView
@@ -314,6 +329,18 @@ const styles = StyleSheet.create({
   webview: { flex: 1, backgroundColor: '#0d1117' },
   placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   placeholderText: { color: '#bcb6cc', fontSize: 12 },
+  verdictText: { color: '#fecaca', textAlign: 'center', paddingHorizontal: 24 },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: '#a78bfa',
+  },
+  retryText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
