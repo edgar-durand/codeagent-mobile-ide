@@ -10,10 +10,41 @@
 ```bash
 npm install @codeam/ide-native @codeam/ide-core
 # Peer deps the package expects you already have:
-npm install react react-native react-native-webview react-native-safe-area-context @expo/vector-icons
+npm install react react-native react-native-webview react-native-safe-area-context react-native-svg @expo/vector-icons
 ```
 
 The package works with Expo (managed or bare) and plain React Native ≥ 0.74. Monaco + xterm.js are loaded inside a WebView from a CDN at first use, so your app's Metro bundle stays small.
+
+## Theme the complete IDE chrome
+
+`IDEThemeProvider` applies semantic colors, spacing, typography, radii, and minimum touch sizes
+to the native IDE surface. Partial overrides inherit safe defaults, so consumers do not need to
+copy the complete theme.
+
+```tsx
+import { IDEThemeProvider, IDEShell } from '@codeam/ide-native';
+
+export function BrandedIDE() {
+  return (
+    <IDEThemeProvider
+      theme={{
+        colors: { accent: '#2563eb', accentMuted: 'rgba(37,99,235,0.2)' },
+        typography: { monoFamily: 'JetBrainsMono' },
+      }}
+    >
+      <IDEShell {...shellProps}>{editor}</IDEShell>
+    </IDEThemeProvider>
+  );
+}
+```
+
+Interactive controls expose native accessibility roles, labels, selected/busy states, and mobile
+touch targets. Destructive bulk actions such as Replace All, conflict resolution, uninstall, and
+closing dirty tabs require confirmation.
+
+Provider failures remain visible and retryable instead of being presented as empty results.
+`ResilientWebView` also waits for Monaco/xterm bridge readiness, retries one reclaimed renderer,
+and surfaces a reload action if recovery fails.
 
 ## What you get
 

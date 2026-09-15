@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'rea
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView, type WebViewProps } from 'react-native-webview';
+import { useIDETheme } from '../theme';
 
 /**
  * A `WebView` that is never allowed to fail silently.
@@ -45,8 +46,9 @@ import { WebView, type WebViewProps } from 'react-native-webview';
  *  3. **Retry actually remounts.** Recovery bumps a key, so the WebView is
  *     rebuilt from scratch rather than asked to reload a dead process.
  *
- * `onReady` is optional: surfaces whose HTML posts its own ready message can
- * clear the spinner precisely; the rest fall back to `onLoadEnd`.
+ * Bridge readiness is optional: surfaces whose HTML posts its own ready
+ * message can opt into `waitForBridgeReady` and identify the ready generation;
+ * the rest fall back to `onLoadEnd`.
  */
 export interface ResilientWebViewProps extends WebViewProps {
   /** Shown under the spinner while the surface boots. */
@@ -55,6 +57,16 @@ export interface ResilientWebViewProps extends WebViewProps {
   surfaceLabel?: string;
   /** Reported once per distinct failure — wire it to your telemetry. */
   onSurfaceError?: (info: { reason: string; detail?: string; recovered: boolean }) => void;
+  /**
+   * Embedded-app readiness. When supplied, `onLoadEnd` only proves that the
+   * document loaded; the overlay remains until this becomes true. Omit it for
+   * documents that have no bridge-level ready signal.
+   */
+  bridgeReadyGeneration?: number;
+  /** Keep loading after `onLoadEnd` until the current generation is ready. */
+  waitForBridgeReady?: boolean;
+  /** Called whenever recovery creates a fresh WebView generation. */
+  onGenerationChange?: (generation: number) => void;
   /**
    * Ref to the inner WebView, for `injectJavaScript`.
    *
@@ -92,6 +104,9 @@ export function ResilientWebView({
   loadingLabel,
   surfaceLabel = 'view',
   onSurfaceError,
+  bridgeReadyGeneration,
+  waitForBridgeReady = false,
+  onGenerationChange,
   onLoadEnd,
   onError,
   onHttpError,
@@ -99,15 +114,20 @@ export function ResilientWebView({
   testID,
   ...webViewProps
 }: ResilientWebViewProps) {
+  const theme = useIDETheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [phase, setPhase] = useState<Phase>('loading');
   const [detail, setDetail] = useState<string | undefined>(undefined);
   // Remounting is the only reliable recovery: a renderer process that died
   // cannot be told to reload itself.
   const [mountKey, setMountKey] = useState(0);
+  const generationRef = useRef(0);
+  generationRef.current = mountKey;
   const silentRecoveries = useRef(0);
 
   const fail = useCallback(
-    (reason: string, nextDetail?: string) => {
+    (generation: number, reason: string, nextDetail?: string) => {
+      if (generationRef.current !== generation) return;
       const recoverable = silentRecoveries.current < SILENT_RECOVERY_LIMIT;
       onSurfaceError?.({ reason, detail: nextDetail, recovered: recoverable });
       if (recoverable) {
@@ -122,11 +142,23 @@ export function ResilientWebView({
     [onSurfaceError],
   );
 
+  useEffect(() => {
+    onGenerationChange?.(mountKey);
+  }, [mountKey, onGenerationChange]);
+
+  useEffect(() => {
+    if (bridgeReadyGeneration === mountKey && phase === 'loading') setPhase('ok');
+  }, [bridgeReadyGeneration, mountKey, phase]);
+
   // The watchdog. Armed on every mount and every remount (`mountKey`), and
   // disarmed the moment the surface reports it loaded.
   useEffect(() => {
     if (phase !== 'loading') return;
-    const timer = setTimeout(() => fail('load-timeout', 'It never finished loading.'), LOAD_TIMEOUT_MS);
+    const generation = mountKey;
+    const timer = setTimeout(
+      () => fail(generation, 'load-timeout', 'It never finished loading.'),
+      LOAD_TIMEOUT_MS,
+    );
     return () => clearTimeout(timer);
   }, [phase, mountKey, fail]);
 
@@ -142,35 +174,38 @@ export function ResilientWebView({
   const handlers = useMemo(
     () => ({
       onLoadEnd: (e: Parameters<NonNullable<WebViewProps['onLoadEnd']>>[0]) => {
-        setPhase((p) => (p === 'error' ? p : 'ok'));
+        if (generationRef.current !== mountKey) return;
+        if (!waitForBridgeReady) setPhase((p) => (p === 'error' ? p : 'ok'));
         onLoadEnd?.(e);
       },
       onError: (e: Parameters<NonNullable<WebViewProps['onError']>>[0]) => {
-        fail('load-error', e?.nativeEvent?.description);
+        if (generationRef.current !== mountKey) return;
+        fail(mountKey, 'load-error', e?.nativeEvent?.description);
         onError?.(e);
       },
       onHttpError: (e: Parameters<NonNullable<WebViewProps['onHttpError']>>[0]) => {
-        fail('http-error', `HTTP ${e?.nativeEvent?.statusCode ?? '?'}`);
+        if (generationRef.current !== mountKey) return;
+        fail(mountKey, 'http-error', `HTTP ${e?.nativeEvent?.statusCode ?? '?'}`);
         onHttpError?.(e);
       },
       // Android. Returning `true` tells the platform we handled it, which is
       // what stops the whole RN process from being torn down with the view.
       onRenderProcessGone: () => {
-        fail('renderer-gone', 'The system reclaimed this view.');
+        fail(mountKey, 'renderer-gone', 'The system reclaimed this view.');
         return true;
       },
       // iOS equivalent.
       onContentProcessDidTerminate: () => {
-        fail('renderer-gone', 'The system reclaimed this view.');
+        fail(mountKey, 'renderer-gone', 'The system reclaimed this view.');
       },
     }),
-    [fail, onLoadEnd, onError, onHttpError],
+    [fail, mountKey, onLoadEnd, onError, onHttpError, waitForBridgeReady],
   );
 
   return (
     <View style={styles.fill} testID={testID}>
       {phase !== 'error' ? (
-        <WebView
+        <WebView<object>
           {...webViewProps}
           ref={webViewRef}
           key={mountKey}
@@ -181,14 +216,14 @@ export function ResilientWebView({
 
       {phase === 'loading' ? (
         <View style={styles.overlay} testID={testID ? `${testID}-loading` : undefined}>
-          <ActivityIndicator size="small" color="#cbb7ff" />
+          <ActivityIndicator size="small" color={theme.colors.accent} />
           {loadingLabel ? <Text style={styles.text}>{loadingLabel}</Text> : null}
         </View>
       ) : null}
 
       {phase === 'error' ? (
         <View style={styles.overlay} testID={testID ? `${testID}-error` : undefined}>
-          <Ionicons name="alert-circle-outline" size={28} color="#f87171" />
+          <Ionicons name="alert-circle-outline" size={28} color={theme.colors.danger} />
           {/* Say what broke and that it is recoverable. The old behaviour —
               a black rectangle — made users think their FILE was broken. */}
           <Text style={styles.text}>{`This ${surfaceLabel} stopped responding.`}</Text>
@@ -198,6 +233,8 @@ export function ResilientWebView({
             style={styles.retryBtn}
             activeOpacity={0.8}
             testID={testID ? `${testID}-retry` : undefined}
+            accessibilityRole="button"
+            accessibilityLabel={`Reload ${surfaceLabel}`}
           >
             <Ionicons name="refresh-outline" size={14} color="#fff" />
             <Text style={styles.retryText}>Reload</Text>
@@ -208,30 +245,37 @@ export function ResilientWebView({
   );
 }
 
-const styles = StyleSheet.create({
-  fill: { flex: 1 },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    padding: 24,
-    backgroundColor: '#0d1117',
-  },
-  text: { color: '#cbc3d7', fontSize: 13, textAlign: 'center' },
-  detail: { color: '#8b8699', fontSize: 11, textAlign: 'center' },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#7c5cff',
-  },
-  retryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-});
+function createStyles(theme: ReturnType<typeof useIDETheme>) {
+  return StyleSheet.create({
+    fill: { flex: 1 },
+    overlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: theme.spacing.md,
+      padding: theme.spacing.xl,
+      backgroundColor: theme.colors.surface,
+    },
+    text: { color: theme.colors.text, fontSize: theme.typography.bodySize, textAlign: 'center' },
+    detail: {
+      color: theme.colors.textMuted,
+      fontSize: theme.typography.detailSize,
+      textAlign: 'center',
+    },
+    retryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.lg,
+      minHeight: theme.minimumTouchSize,
+      justifyContent: 'center',
+      borderRadius: theme.radii.md,
+      backgroundColor: theme.colors.accent,
+    },
+    retryText: { color: '#fff', fontSize: theme.typography.bodySize, fontWeight: '600' },
+  });
+}

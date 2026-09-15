@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import type { WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
 import { detectLanguage, type FileFetcher, type GitProvider } from '@codeam/ide-core';
+import { useIDETheme } from '../theme';
 
 interface Props {
   path: string;
@@ -104,6 +106,7 @@ function buildDiffHtml(original: string, modified: string, language: string): st
       scrollBeyondLastLine: false,
     });
     diffEditor.setModel({ original: originalModel, modified: modifiedModel });
+    window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
   });
 </script>
 </body>
@@ -121,6 +124,14 @@ function buildDiffHtml(original: string, modified: string, language: string): st
  * automatically when its renderer detects the available width.
  */
 export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
+  const theme = useIDETheme();
+  const [attempt, setAttempt] = useState(0);
+  const generationRef = useRef(0);
+  const [readyGeneration, setReadyGeneration] = useState<number | undefined>(undefined);
+  const handleGenerationChange = useCallback((generation: number) => {
+    generationRef.current = generation;
+    setReadyGeneration(undefined);
+  }, []);
   const [state, setState] = useState<DiffState>({
     loading: true,
     error: null,
@@ -151,8 +162,17 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
           });
           return;
         }
+        if (!diffResult) {
+          setState({
+            loading: false,
+            error: 'The source-control provider did not return a diff for this file.',
+            original: '',
+            modified: '',
+          });
+          return;
+        }
         const modified = readResult.content ?? '';
-        const original = diffResult?.diff
+        const original = diffResult.diff
           ? reconstructOriginal(modified, diffResult.diff)
           : modified;
         setState({ loading: false, error: null, original, modified });
@@ -169,7 +189,7 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [path, staged]);
+  }, [path, staged, attempt]);
 
   const html = useMemo(() => {
     if (state.loading) return null;
@@ -177,7 +197,7 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
   }, [state.loading, state.original, state.modified, path]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
       <View style={styles.headerBar}>
         <Text style={styles.pathText} numberOfLines={1}>
           {path}
@@ -187,30 +207,52 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
             <Text style={styles.stagedBadgeText}>{staged ? 'STAGED' : 'WORKING TREE'}</Text>
           </View>
           {onClose ? (
-            <Pressable onPress={onClose} hitSlop={6}>
+            <Pressable
+              onPress={onClose}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Close diff"
+            >
               <Ionicons name="close" size={18} color="#9ca3af" />
             </Pressable>
           ) : null}
         </View>
       </View>
       {state.error ? (
-        <View style={styles.errorBar}>
+        <View accessibilityRole="alert" style={styles.errorBar}>
           <Text style={styles.errorText} numberOfLines={2}>
             {state.error}
           </Text>
         </View>
       ) : null}
       <View style={styles.body}>
-        {state.loading || html === null ? (
+        {state.loading ? (
           <View style={styles.loading}>
             <ActivityIndicator size="small" color="#a78bfa" />
             <Text style={styles.loadingText}>Loading diff…</Text>
           </View>
-        ) : (
+        ) : state.error ? (
+          <View style={styles.loading}>
+            <Ionicons name="alert-circle-outline" size={28} color={theme.colors.danger} />
+            <Text style={styles.loadingText}>The diff could not be loaded.</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading diff"
+              onPress={() => setAttempt((value) => value + 1)}
+              style={[styles.retryBtn, { minHeight: theme.minimumTouchSize }]}
+            >
+              <Ionicons name="refresh-outline" size={14} color="#fff" />
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : html !== null ? (
           <ResilientWebView
             surfaceLabel="diff"
             loadingLabel="Rendering diff…"
             testID="diff-surface"
+            waitForBridgeReady
+            bridgeReadyGeneration={readyGeneration}
+            onGenerationChange={handleGenerationChange}
             originWhitelist={['*']}
             source={{ html }}
             style={styles.webview}
@@ -218,8 +260,16 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
             domStorageEnabled
             setSupportMultipleWindows={false}
             automaticallyAdjustContentInsets={false}
+            onMessage={(event: WebViewMessageEvent) => {
+              try {
+                const message = JSON.parse(event.nativeEvent.data) as { type?: unknown };
+                if (message.type === 'ready') setReadyGeneration(generationRef.current);
+              } catch {
+                // Ignore messages outside the small diff bridge protocol.
+              }
+            }}
           />
-        )}
+        ) : null}
       </View>
     </View>
   );
@@ -258,4 +308,13 @@ const styles = StyleSheet.create({
   webview: { flex: 1, backgroundColor: '#0d1117' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
   loadingText: { color: '#9ca3af', fontSize: 12 },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#7c5cff',
+  },
+  retryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });

@@ -93,6 +93,7 @@ describe('FileViewerHost — read failure', () => {
     expect(retryButton(c)).toBeNull();
 
     await act(async () => resolveSecond!({ content: 'export const x = 1;\n' }));
+    await act(async () => bridge(c, { type: 'ready' }));
 
     expect(spinner(c)).toBeNull();
     expect(webview(c)).not.toBeNull();
@@ -119,11 +120,12 @@ describe('FileViewerHost — read failure', () => {
 describe('FileViewerHost — errors while a file is displayed', () => {
   it('a save failure goes to the top bar once and keeps the editor mounted', async () => {
     const read = vi.fn(async (): Promise<FileReadResult> => ({ content: 'hello' }));
-    const write = vi.fn(
-      async (): Promise<FileWriteResult> => ({ error: 'Save failed: disk full' }),
-    );
+    const write = vi.fn(async (): Promise<FileWriteResult> => ({
+      error: 'Save failed: disk full',
+    }));
     const c = await mount(makeFetcher(read, write));
     expect(webview(c)).not.toBeNull();
+    await act(async () => bridge(c, { type: 'ready' }));
 
     // Same path Cmd+S takes inside Monaco: edit the buffer, then save.
     await act(async () => bridge(c, { type: 'change', value: 'hello world' }));

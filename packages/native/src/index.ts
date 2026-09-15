@@ -8,6 +8,9 @@
  */
 export * from '@codeam/ide-core';
 
+export { DEFAULT_IDE_THEME, IDEThemeProvider, useIDETheme } from './theme';
+export type { IDETheme, IDEThemeColors, IDEThemeProviderProps } from './theme';
+
 export { FileViewerProvider, useFileViewer } from './components/FileViewerContext';
 export type { FileViewerContextValue } from './components/FileViewerContext';
 export { FileViewerHost } from './components/FileViewerHost';

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Linking,
   Pressable,
   ScrollView,
@@ -11,16 +12,19 @@ import {
 import {
   ICON_THEMES,
   MARKETPLACE_THEMES,
-  parseJsonc,
   vscodeThemeToMonaco,
   type MarketplaceIconThemeRef,
   type MarketplaceThemeRef,
   type MonacoTheme,
   type SettingsStore,
-  type VSCodeColorTheme,
-  type VSCodeIconTheme,
 } from '@codeam/ide-core';
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
+import { useIDETheme } from '../theme';
+import {
+  downloadMarketplaceJson,
+  isVSCodeColorTheme,
+  isVSCodeIconTheme,
+} from '../utils/marketplaceDownload';
 
 /**
  * Persisted pointer to the active icon theme. Only the upstream
@@ -34,6 +38,14 @@ export const ACTIVE_ICON_THEME_STORE_KEY = 'editor.iconTheme';
 export interface ActiveIconTheme {
   id: string;
   url: string;
+}
+
+function isActiveIconTheme(value: unknown): value is ActiveIconTheme {
+  return !!value && typeof value === 'object' && 'id' in value && 'url' in value;
+}
+
+function message(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 export function deriveIconThemeBaseUrl(jsonUrl: string): string {
@@ -71,78 +83,121 @@ export function MarketplacePanel({
   const [activeIconTheme, setActiveIconTheme] = useState<ActiveIconTheme | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
   const [errorByName, setErrorByName] = useState<Record<string, string>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const downloads = useRef(new Set<AbortController>());
+  const operationBusy = useRef(false);
+  const ideTheme = useIDETheme();
 
   useEffect(() => {
     let cancelled = false;
-    void store.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      if (Array.isArray(v)) setInstalled(v as MonacoTheme[]);
-    });
-    void store.get('editor').then((v) => {
-      if (cancelled) return;
-      if (v && typeof v === 'object' && 'theme' in v && typeof v.theme === 'string') {
-        setActiveTheme(v.theme);
-      }
-    });
-    void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      if (v && typeof v === 'object' && 'id' in v) setActiveIconTheme(v as ActiveIconTheme);
-    });
-    const off = store.watch((key, value) => {
-      if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-        setInstalled(value as MonacoTheme[]);
-      } else if (
-        key === 'editor' &&
-        value &&
-        typeof value === 'object' &&
-        'theme' in value &&
-        typeof value.theme === 'string'
-      ) {
-        setActiveTheme(value.theme);
-      } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
-        setActiveIconTheme(
-          value && typeof value === 'object' && 'id' in value
-            ? (value as ActiveIconTheme)
-            : null,
-        );
-      }
-    });
+    void Promise.all([
+      store.get(CUSTOM_THEMES_STORE_KEY),
+      store.get('editor'),
+      store.get(ACTIVE_ICON_THEME_STORE_KEY),
+    ])
+      .then(([custom, editor, icons]) => {
+        if (cancelled) return;
+        if (Array.isArray(custom)) setInstalled(custom as MonacoTheme[]);
+        if (
+          editor &&
+          typeof editor === 'object' &&
+          'theme' in editor &&
+          typeof editor.theme === 'string'
+        )
+          setActiveTheme(editor.theme);
+        if (isActiveIconTheme(icons)) setActiveIconTheme(icons);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadError(message(error, 'Could not load marketplace settings.'));
+      });
+    let off: () => void = () => undefined;
+    try {
+      off = store.watch((key, value) => {
+        if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+          setInstalled(value as MonacoTheme[]);
+        } else if (
+          key === 'editor' &&
+          value &&
+          typeof value === 'object' &&
+          'theme' in value &&
+          typeof value.theme === 'string'
+        ) {
+          setActiveTheme(value.theme);
+        } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
+          setActiveIconTheme(isActiveIconTheme(value) ? value : null);
+        }
+      });
+    } catch (error) {
+      setLoadError(message(error, 'Could not watch marketplace settings.'));
+    }
     return () => {
       cancelled = true;
       off();
     };
   }, [store]);
 
-  const installIconTheme = async (ref: MarketplaceIconThemeRef) => {
-    setBusyName(ref.name);
-    setErrorByName((prev) => {
-      const next = { ...prev };
-      delete next[ref.name];
+  useEffect(
+    () => () => {
+      downloads.current.forEach((controller) => controller.abort());
+      downloads.current.clear();
+    },
+    [],
+  );
+
+  const clearError = (name: string) =>
+    setErrorByName((previous) => {
+      const next = { ...previous };
+      delete next[name];
       return next;
     });
+  const fail = (name: string, error: unknown, fallback: string) =>
+    setErrorByName((previous) => ({ ...previous, [name]: message(error, fallback) }));
+
+  const runStoreAction = async (name: string, action: () => Promise<void>) => {
+    if (operationBusy.current) return;
+    operationBusy.current = true;
+    setBusyName(name);
+    clearError(name);
     try {
-      const res = await fetch(ref.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      // Validate parse — discard the result. We persist only the
-      // URL pointer; useIconResolver re-fetches on mount. This
-      // avoids exhausting AsyncStorage (some platforms cap rows at
-      // 6 MB) and matches the web fix.
-      parseJsonc<VSCodeIconTheme>(text);
-      const payload: ActiveIconTheme = { id: ref.name, url: ref.url };
-      await store.set(ACTIVE_ICON_THEME_STORE_KEY, payload);
-    } catch (e) {
-      setErrorByName((prev) => ({
-        ...prev,
-        [ref.name]: e instanceof Error ? e.message : 'Install failed',
-      }));
+      await action();
+    } catch (error) {
+      fail(name, error, 'The operation could not be completed.');
     } finally {
+      operationBusy.current = false;
       setBusyName(null);
     }
   };
 
-  const uninstallIconTheme = async () => {
-    await store.set(ACTIVE_ICON_THEME_STORE_KEY, null);
+  const installIconTheme = async (ref: MarketplaceIconThemeRef) => {
+    if (operationBusy.current) return;
+    operationBusy.current = true;
+    setBusyName(ref.name);
+    clearError(ref.name);
+    const controller = new AbortController();
+    downloads.current.add(controller);
+    try {
+      await downloadMarketplaceJson(ref.url, isVSCodeIconTheme, controller.signal);
+      const payload: ActiveIconTheme = { id: ref.name, url: ref.url };
+      await store.set(ACTIVE_ICON_THEME_STORE_KEY, payload);
+    } catch (e) {
+      fail(ref.name, e, 'Install failed.');
+    } finally {
+      downloads.current.delete(controller);
+      operationBusy.current = false;
+      setBusyName(null);
+    }
+  };
+
+  const uninstallIconTheme = (name: string) => {
+    Alert.alert('Uninstall icon theme?', `Remove “${name}” from this device?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Uninstall',
+        style: 'destructive',
+        onPress: () =>
+          void runStoreAction(name, () => store.set(ACTIVE_ICON_THEME_STORE_KEY, null)),
+      },
+    ]);
   };
 
   const filtered = useMemo(() => {
@@ -160,54 +215,76 @@ export function MarketplacePanel({
   }, [themes, query, filter, installed]);
 
   const install = async (ref: MarketplaceThemeRef) => {
+    if (operationBusy.current) return;
+    operationBusy.current = true;
     setBusyName(ref.name);
-    setErrorByName((prev) => {
-      const next = { ...prev };
-      delete next[ref.name];
-      return next;
-    });
+    clearError(ref.name);
+    const controller = new AbortController();
+    downloads.current.add(controller);
     try {
-      const res = await fetch(ref.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // VS Code marketplace themes ship as JSONC (comments +
-      // trailing commas), which `res.json()` rejects. Read text +
-      // route through the JSONC-tolerant parser.
-      const text = await res.text();
-      const raw = parseJsonc<VSCodeColorTheme>(text);
+      const raw = await downloadMarketplaceJson(ref.url, isVSCodeColorTheme, controller.signal);
       const monacoTheme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
-      const nextInstalled = [
-        ...installed.filter((t) => t.name !== monacoTheme.name),
-        monacoTheme,
-      ];
+      const nextInstalled = [...installed.filter((t) => t.name !== monacoTheme.name), monacoTheme];
       await store.set(CUSTOM_THEMES_STORE_KEY, nextInstalled);
-      const current = (await store.get('editor')) ?? {};
-      await store.set('editor', { ...current, theme: ref.name });
+      try {
+        const current = (await store.get('editor')) ?? {};
+        await store.set('editor', { ...current, theme: ref.name });
+      } catch (error) {
+        await store.set(CUSTOM_THEMES_STORE_KEY, installed);
+        throw error;
+      }
     } catch (e) {
-      setErrorByName((prev) => ({
-        ...prev,
-        [ref.name]: e instanceof Error ? e.message : 'Install failed',
-      }));
+      fail(ref.name, e, 'Install failed.');
     } finally {
+      downloads.current.delete(controller);
+      operationBusy.current = false;
       setBusyName(null);
     }
   };
 
   const apply = async (ref: MarketplaceThemeRef) => {
-    const current = (await store.get('editor')) ?? {};
-    await store.set('editor', { ...current, theme: ref.name });
+    await runStoreAction(ref.name, async () => {
+      const current = (await store.get('editor')) ?? {};
+      await store.set('editor', { ...current, theme: ref.name });
+    });
   };
 
-  const uninstall = async (ref: MarketplaceThemeRef) => {
-    const next = installed.filter((t) => t.name !== ref.name);
-    await store.set(CUSTOM_THEMES_STORE_KEY, next);
-    if (activeTheme === ref.name) {
-      const current = (await store.get('editor')) ?? {};
-      await store.set('editor', { ...current, theme: 'vs-dark' });
+  const uninstall = (ref: MarketplaceThemeRef) => {
+    Alert.alert('Uninstall theme?', `Remove “${ref.name}” from this device?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Uninstall',
+        style: 'destructive',
+        onPress: () =>
+          void runStoreAction(ref.name, async () => {
+            const next = installed.filter((theme) => theme.name !== ref.name);
+            const previousEditor = (await store.get('editor')) ?? {};
+            if (activeTheme === ref.name)
+              await store.set('editor', { ...previousEditor, theme: 'vs-dark' });
+            try {
+              await store.set(CUSTOM_THEMES_STORE_KEY, next);
+            } catch (error) {
+              if (activeTheme === ref.name) await store.set('editor', previousEditor);
+              throw error;
+            }
+          }),
+      },
+    ]);
+  };
+
+  const openSource = async (name: string, url: string) => {
+    clearError(name);
+    try {
+      if (!(await Linking.canOpenURL(url)))
+        throw new Error('This link cannot be opened on this device.');
+      await Linking.openURL(url);
+    } catch (error) {
+      fail(name, error, 'Could not open the source link.');
     }
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: ideTheme.colors.surface }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>{title}</Text>
       </View>
@@ -215,6 +292,8 @@ export function MarketplacePanel({
         {(['colors', 'icons'] as const).map((t) => (
           <Pressable
             key={t}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === t }}
             onPress={() => setTab(t)}
             style={[styles.tabChip, tab === t && styles.tabChipActive]}
           >
@@ -225,7 +304,13 @@ export function MarketplacePanel({
         ))}
       </View>
       <View style={styles.controls}>
+        {loadError && (
+          <Text accessibilityRole="alert" style={styles.cardError}>
+            {loadError}
+          </Text>
+        )}
         <TextInput
+          accessibilityLabel="Search marketplace themes"
           value={query}
           onChangeText={setQuery}
           placeholder="Search themes…"
@@ -239,15 +324,12 @@ export function MarketplacePanel({
             {(['all', 'dark', 'light', 'installed'] as const).map((f) => (
               <Pressable
                 key={f}
+                accessibilityRole="button"
+                accessibilityState={{ selected: filter === f }}
                 onPress={() => setFilter(f)}
                 style={[styles.filterChip, filter === f && styles.filterChipActive]}
               >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    filter === f && styles.filterChipTextActive,
-                  ]}
-                >
+                <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
                   {f}
                 </Text>
               </Pressable>
@@ -272,10 +354,7 @@ export function MarketplacePanel({
                 const isBusy = busyName === ref.name;
                 const err = errorByName[ref.name];
                 return (
-                  <View
-                    key={ref.name}
-                    style={[styles.card, isActive && styles.cardActive]}
-                  >
+                  <View key={ref.name} style={[styles.card, isActive && styles.cardActive]}>
                     <View style={styles.iconSwatch}>
                       {ref.preview.map((p, idx) => (
                         <Text key={idx} style={styles.iconSwatchGlyph}>
@@ -294,34 +373,44 @@ export function MarketplacePanel({
                       <Text style={styles.cardDesc} numberOfLines={2}>
                         {ref.description}
                       </Text>
-                      {err && <Text style={styles.cardError}>{err}</Text>}
+                      {err && (
+                        <Text accessibilityRole="alert" style={styles.cardError}>
+                          {err}
+                        </Text>
+                      )}
                       <View style={styles.cardActions}>
                         {isActive ? (
                           <>
                             <View style={styles.activePill}>
                               <Text style={styles.activePillText}>● Active</Text>
                             </View>
-                            <Pressable onPress={() => void uninstallIconTheme()}>
+                            <Pressable
+                              disabled={!!busyName}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Uninstall ${ref.name}`}
+                              onPress={() => uninstallIconTheme(ref.name)}
+                              style={styles.touchAction}
+                            >
                               <Text style={styles.btnDanger}>Uninstall</Text>
                             </Pressable>
                           </>
                         ) : (
                           <Pressable
                             disabled={isBusy}
+                            accessibilityRole="button"
+                            accessibilityState={{ disabled: isBusy }}
                             onPress={() => void installIconTheme(ref)}
                             style={[styles.btn, styles.btnInstall, isBusy && { opacity: 0.5 }]}
                           >
-                            <Text style={styles.btnText}>
-                              {isBusy ? 'Installing…' : 'Install'}
-                            </Text>
+                            <Text style={styles.btnText}>{isBusy ? 'Installing…' : 'Install'}</Text>
                           </Pressable>
                         )}
                         {ref.homepage && (
                           <Pressable
                             style={styles.sourceLink}
-                            onPress={() => {
-                              if (ref.homepage) void Linking.openURL(ref.homepage);
-                            }}
+                            accessibilityRole="link"
+                            accessibilityLabel={`Open source for ${ref.name}`}
+                            onPress={() => ref.homepage && void openSource(ref.name, ref.homepage)}
                           >
                             <Text style={styles.sourceLinkText}>Source ↗</Text>
                           </Pressable>
@@ -341,10 +430,7 @@ export function MarketplacePanel({
             const isBusy = busyName === ref.name;
             const err = errorByName[ref.name];
             return (
-              <View
-                key={ref.name}
-                style={[styles.card, isActive && styles.cardActive]}
-              >
+              <View key={ref.name} style={[styles.card, isActive && styles.cardActive]}>
                 <View style={[styles.swatch, { backgroundColor: ref.swatch.bg }]}>
                   <View style={[styles.swatchStripe, { backgroundColor: ref.swatch.fg }]} />
                   <View style={[styles.swatchStripe, { backgroundColor: ref.swatch.bg }]} />
@@ -361,7 +447,11 @@ export function MarketplacePanel({
                   <Text style={styles.cardDesc} numberOfLines={2}>
                     {ref.description}
                   </Text>
-                  {err && <Text style={styles.cardError}>{err}</Text>}
+                  {err && (
+                    <Text accessibilityRole="alert" style={styles.cardError}>
+                      {err}
+                    </Text>
+                  )}
                   <View style={styles.cardActions}>
                     {isActive ? (
                       <View style={styles.activePill}>
@@ -370,18 +460,29 @@ export function MarketplacePanel({
                     ) : isInstalled ? (
                       <>
                         <Pressable
+                          disabled={!!busyName}
+                          accessibilityRole="button"
+                          accessibilityState={{ disabled: !!busyName }}
                           onPress={() => void apply(ref)}
                           style={[styles.btn, styles.btnPrimary]}
                         >
                           <Text style={styles.btnText}>Apply</Text>
                         </Pressable>
-                        <Pressable onPress={() => void uninstall(ref)}>
+                        <Pressable
+                          disabled={!!busyName}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Uninstall ${ref.name}`}
+                          onPress={() => uninstall(ref)}
+                          style={styles.touchAction}
+                        >
                           <Text style={styles.btnDanger}>Uninstall</Text>
                         </Pressable>
                       </>
                     ) : (
                       <Pressable
                         disabled={isBusy}
+                        accessibilityRole="button"
+                        accessibilityState={{ disabled: isBusy }}
                         onPress={() => void install(ref)}
                         style={[styles.btn, styles.btnInstall, isBusy && { opacity: 0.5 }]}
                       >
@@ -391,9 +492,9 @@ export function MarketplacePanel({
                     {ref.homepage && (
                       <Pressable
                         style={styles.sourceLink}
-                        onPress={() => {
-                          if (ref.homepage) void Linking.openURL(ref.homepage);
-                        }}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open source for ${ref.name}`}
+                        onPress={() => ref.homepage && void openSource(ref.name, ref.homepage)}
                       >
                         <Text style={styles.sourceLinkText}>Source ↗</Text>
                       </Pressable>
@@ -443,6 +544,8 @@ const styles = StyleSheet.create({
   },
   filterRow: { flexDirection: 'row', gap: 4 },
   filterChip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
@@ -496,6 +599,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   btn: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 4,
@@ -511,7 +616,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(124,58,237,0.3)',
   },
   activePillText: { color: '#ede9fe', fontSize: 10, fontWeight: '600' },
-  sourceLink: { marginLeft: 'auto' },
+  sourceLink: { marginLeft: 'auto', minHeight: 44, justifyContent: 'center' },
+  touchAction: { minHeight: 44, justifyContent: 'center' },
   sourceLinkText: { color: '#6b7280', fontSize: 10 },
   tabRow: {
     flexDirection: 'row',
@@ -522,6 +628,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1f2433',
   },
   tabChip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderBottomWidth: 2,

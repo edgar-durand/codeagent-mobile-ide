@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useIDETheme } from '../theme';
 
 interface Props {
   direction?: 'vertical' | 'horizontal';
@@ -29,6 +30,7 @@ export function SplitPane({
   collapsed,
   onCollapseToggle,
 }: Props) {
+  const theme = useIDETheme();
   const [size, setSize] = useState(initialSecondSize);
   const dragStart = useRef(initialSecondSize);
   const isVertical = direction === 'vertical';
@@ -53,20 +55,40 @@ export function SplitPane({
   const secondPx = collapsed ? 0 : size;
 
   return (
-    <View
-      style={[styles.container, isVertical ? styles.containerCol : styles.containerRow]}
-    >
+    <View style={[styles.container, isVertical ? styles.containerCol : styles.containerRow]}>
       <View style={[styles.first, isVertical ? styles.firstCol : styles.firstRow]}>
         {children[0]}
       </View>
       <View
         {...panResponder.panHandlers}
-        style={isVertical ? styles.handleV : styles.handleH}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={handleTitle ?? 'Resize pane'}
+        accessibilityValue={{ min: minSecondSize, max: maxSecondSize, now: secondPx }}
+        accessibilityActions={[
+          { name: 'increment', label: 'Make pane larger' },
+          { name: 'decrement', label: 'Make pane smaller' },
+        ]}
+        onAccessibilityAction={({ nativeEvent }) => {
+          const delta = nativeEvent.actionName === 'increment' ? 24 : -24;
+          setSize((current) => Math.max(minSecondSize, Math.min(maxSecondSize, current + delta)));
+        }}
+        style={[
+          isVertical ? styles.handleV : styles.handleH,
+          { backgroundColor: theme.colors.surfaceRaised },
+        ]}
       >
         {isVertical ? (
           <View style={styles.handleRow}>
-            <Pressable onPress={onCollapseToggle} hitSlop={6}>
-              <Text style={styles.handleTitle}>
+            <Pressable
+              onPress={onCollapseToggle}
+              disabled={!onCollapseToggle}
+              accessibilityRole="button"
+              accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${handleTitle ?? 'bottom pane'}`}
+              accessibilityState={{ expanded: !collapsed, disabled: !onCollapseToggle }}
+              style={{ minHeight: theme.minimumTouchSize, justifyContent: 'center' }}
+            >
+              <Text style={[styles.handleTitle, { color: theme.colors.textMuted }]}>
                 {collapsed ? '▸ ' : '▾ '}
                 {handleTitle ?? 'Bottom Pane'}
               </Text>
@@ -96,7 +118,7 @@ const styles = StyleSheet.create({
   firstCol: { flexDirection: 'column' },
   firstRow: { flexDirection: 'row' },
   handleV: {
-    height: 24,
+    minHeight: 44,
     backgroundColor: '#161b22',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#1f2433',
@@ -105,7 +127,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   handleH: {
-    width: 6,
+    width: 12,
     backgroundColor: '#161b22',
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: '#1f2433',

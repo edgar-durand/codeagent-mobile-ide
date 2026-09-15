@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useIDETheme } from '../theme';
 
 interface Props {
   path: string;
@@ -14,6 +15,7 @@ interface Props {
  * narrow phone width otherwise.
  */
 export function Breadcrumbs({ path, onSegmentClick, rootLabel, onRootClick }: Props) {
+  const theme = useIDETheme();
   if (!path) return null;
   const segments = path.split('/').filter((s) => s.length > 0);
   if (segments.length === 0) return null;
@@ -22,14 +24,32 @@ export function Breadcrumbs({ path, onSegmentClick, rootLabel, onRootClick }: Pr
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={styles.container}
+      accessibilityLabel="File path"
+      style={[
+        styles.container,
+        { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border },
+      ]}
       contentContainerStyle={styles.content}
     >
       {rootLabel ? (
         <>
-          <Pressable onPress={onRootClick} disabled={!onRootClick} style={styles.segment} hitSlop={4}>
-            <Ionicons name="folder-outline" size={11} color="#9ca3af" />
-            <Text style={styles.segmentText}>{rootLabel}</Text>
+          <Pressable
+            onPress={onRootClick}
+            disabled={!onRootClick}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${rootLabel}`}
+            accessibilityState={{ disabled: !onRootClick }}
+            style={[styles.segment, { minHeight: theme.minimumTouchSize }]}
+          >
+            <Ionicons name="folder-outline" size={14} color={theme.colors.textMuted} />
+            <Text
+              style={[
+                styles.segmentText,
+                { color: theme.colors.textMuted, fontFamily: theme.typography.monoFamily },
+              ]}
+            >
+              {rootLabel}
+            </Text>
           </Pressable>
           <Chevron />
         </>
@@ -42,10 +62,21 @@ export function Breadcrumbs({ path, onSegmentClick, rootLabel, onRootClick }: Pr
             key={folderPath}
             onPress={() => !isLast && onSegmentClick?.(folderPath)}
             disabled={isLast || !onSegmentClick}
-            style={styles.segment}
-            hitSlop={4}
+            accessibilityRole={isLast ? 'text' : 'button'}
+            accessibilityLabel={isLast ? `Current file ${seg}` : `Open folder ${folderPath}`}
+            accessibilityState={{ disabled: isLast || !onSegmentClick }}
+            style={[styles.segment, { minHeight: theme.minimumTouchSize }]}
           >
-            <Text style={[styles.segmentText, isLast && styles.segmentLeaf]}>{seg}</Text>
+            <Text
+              style={[
+                styles.segmentText,
+                { color: theme.colors.textMuted, fontFamily: theme.typography.monoFamily },
+                isLast && styles.segmentLeaf,
+                isLast && { color: theme.colors.text },
+              ]}
+            >
+              {seg}
+            </Text>
             {isLast ? null : <Chevron />}
           </Pressable>
         );
@@ -64,7 +95,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#1f2433',
     flexGrow: 0,
-    height: 28,
+    minHeight: 44,
   },
   content: { alignItems: 'center', paddingHorizontal: 12, gap: 4 },
   segment: { flexDirection: 'row', alignItems: 'center', gap: 4 },

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useIDETheme } from '../theme';
 
 export interface ActivityBarItem {
   id: string;
@@ -26,6 +27,7 @@ interface Props {
  * sites. Active item gets a 2px accent strip on its left edge.
  */
 export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48 }: Props) {
+  const theme = useIDETheme();
   const renderItem = (item: ActivityBarItem) => {
     const isActive = item.id === activeId;
     return (
@@ -33,6 +35,7 @@ export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48
         key={item.id}
         accessibilityLabel={item.label}
         accessibilityRole="button"
+        accessibilityState={{ selected: isActive, disabled: item.disabled }}
         disabled={item.disabled}
         onPress={() => {
           if (item.disabled) return;
@@ -40,6 +43,7 @@ export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48
         }}
         style={({ pressed }) => [
           styles.item,
+          { minHeight: theme.minimumTouchSize },
           // Wrapping the icon in a parent with opacity ≠ 1 hides the
           // glyph entirely on some @expo/vector-icons builds. Tint
           // the row background instead so the icon's own color
@@ -49,10 +53,12 @@ export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48
           pressed && !item.disabled && styles.itemPressed,
         ]}
       >
-        {isActive ? <View style={styles.accent} /> : null}
+        {isActive ? (
+          <View style={[styles.accent, { backgroundColor: theme.colors.accent }]} />
+        ) : null}
         <View style={styles.iconWrap}>{item.icon}</View>
         {item.badge !== undefined && item.badge > 0 ? (
-          <View style={styles.badge}>
+          <View style={[styles.badge, { backgroundColor: theme.colors.accent }]}>
             <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
           </View>
         ) : null}
@@ -61,12 +67,16 @@ export function ActivityBar({ items, activeId, onSelect, bottomItems, width = 48
   };
 
   return (
-    <View style={[styles.container, { width }]}>
+    <View
+      accessibilityRole="toolbar"
+      style={[
+        styles.container,
+        { width, backgroundColor: theme.colors.surface, borderRightColor: theme.colors.border },
+      ]}
+    >
       <View style={styles.section}>{items.map(renderItem)}</View>
       {bottomItems && bottomItems.length > 0 ? (
-        <View style={[styles.section, styles.bottomSection]}>
-          {bottomItems.map(renderItem)}
-        </View>
+        <View style={[styles.section, styles.bottomSection]}>{bottomItems.map(renderItem)}</View>
       ) : null}
     </View>
   );

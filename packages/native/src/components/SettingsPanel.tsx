@@ -1,12 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_THEME_CHOICES,
@@ -17,8 +10,9 @@ import {
   type MarketplaceThemeRef,
   type MonacoTheme,
   type SettingsStore,
-  type VSCodeColorTheme,
 } from '@codeam/ide-core';
+import { useIDETheme } from '../theme';
+import { downloadMarketplaceJson, isVSCodeColorTheme } from '../utils/marketplaceDownload';
 
 /**
  * Storage key for user-imported themes — kept byte-identical to the
@@ -36,6 +30,10 @@ interface Props {
 
 function isSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
   return typeof v === 'object' && v !== null;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 /**
@@ -59,58 +57,97 @@ export function SettingsPanel({
   const [importOpen, setImportOpen] = useState(false);
   const [importInput, setImportInput] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const downloads = useRef(new Set<AbortController>());
+  const ideTheme = useIDETheme();
 
   useEffect(() => {
     if (!store) return;
     let cancelled = false;
-    void store.get('editor').then((v) => {
-      if (cancelled) return;
-      if (isSnapshot(v)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...v });
-    });
-    void store.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      if (Array.isArray(v)) setCustomThemes(v as MonacoTheme[]);
-    });
-    const off = store.watch((key, value) => {
-      if (key === 'editor' && isSnapshot(value)) {
-        setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
-      } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-        setCustomThemes(value as MonacoTheme[]);
-      }
-    });
+    void Promise.all([store.get('editor'), store.get(CUSTOM_THEMES_STORE_KEY)])
+      .then(([editor, custom]) => {
+        if (cancelled) return;
+        if (isSnapshot(editor)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...editor });
+        if (Array.isArray(custom)) setCustomThemes(custom as MonacoTheme[]);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setStoreError(errorMessage(error, 'Could not load settings.'));
+      });
+    let off: () => void = () => undefined;
+    try {
+      off = store.watch((key, value) => {
+        if (key === 'editor' && isSnapshot(value)) {
+          setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+        } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+          setCustomThemes(value as MonacoTheme[]);
+        }
+      });
+    } catch (error) {
+      setStoreError(errorMessage(error, 'Could not watch settings for changes.'));
+    }
     return () => {
       cancelled = true;
       off();
     };
   }, [store]);
 
-  const update = (patch: Partial<EditorSettingsSnapshot>) => {
+  useEffect(
+    () => () => {
+      downloads.current.forEach((controller) => controller.abort());
+      downloads.current.clear();
+    },
+    [],
+  );
+
+  const update = async (patch: Partial<EditorSettingsSnapshot>) => {
     const next = { ...settings, ...patch };
-    setSettings(next);
-    if (store) void store.set('editor', next);
+    setStoreError(null);
+    if (!store) {
+      setSettings(next);
+      return true;
+    }
+    setBusy(true);
+    try {
+      await store.set('editor', next);
+      setSettings(next);
+      return true;
+    } catch (error) {
+      setStoreError(errorMessage(error, 'Could not save settings.'));
+      return false;
+    } finally {
+      setBusy(false);
+    }
   };
 
   const installMarketplaceTheme = async (ref: MarketplaceThemeRef) => {
     setImportError(null);
+    setBusy(true);
+    const controller = new AbortController();
+    downloads.current.add(controller);
     try {
-      const res = await fetch(ref.url);
-      if (!res.ok) {
-        setImportError(`Could not fetch ${ref.name} (HTTP ${res.status}).`);
-        return;
-      }
-      const text = await res.text();
-      const raw = parseJsonc<VSCodeColorTheme>(text);
+      const raw = await downloadMarketplaceJson(ref.url, isVSCodeColorTheme, controller.signal);
       const theme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
       const next = [...customThemes.filter((t) => t.name !== theme.name), theme];
+      if (store) {
+        await store.set(CUSTOM_THEMES_STORE_KEY, next);
+        if (!(await update({ theme: theme.name }))) {
+          await store.set(CUSTOM_THEMES_STORE_KEY, customThemes);
+          return;
+        }
+      } else {
+        setSettings((current) => ({ ...current, theme: theme.name }));
+      }
       setCustomThemes(next);
-      if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
-      update({ theme: theme.name });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : 'Failed to install theme');
+    } finally {
+      downloads.current.delete(controller);
+      setBusy(false);
     }
   };
 
-  const onImportTheme = () => {
+  const onImportTheme = async () => {
     setImportError(null);
     const trimmed = importInput.trim();
     if (!trimmed) {
@@ -118,51 +155,89 @@ export function SettingsPanel({
       return;
     }
     try {
-      const raw = parseJsonc<VSCodeColorTheme>(trimmed);
-      if (
-        (!raw.tokenColors || raw.tokenColors.length === 0) &&
-        (!raw.colors || Object.keys(raw.colors).length === 0)
-      ) {
+      const raw = parseJsonc<unknown>(trimmed);
+      if (!isVSCodeColorTheme(raw)) {
         setImportError('Not a VS Code color theme — no colors or tokenColors.');
         return;
       }
       const theme = vscodeThemeToMonaco(raw, `imported-${Date.now()}`);
       const next = [...customThemes.filter((t) => t.name !== theme.name), theme];
+      setBusy(true);
+      if (store) {
+        await store.set(CUSTOM_THEMES_STORE_KEY, next);
+        if (!(await update({ theme: theme.name }))) {
+          await store.set(CUSTOM_THEMES_STORE_KEY, customThemes);
+          return;
+        }
+      } else {
+        setSettings((current) => ({ ...current, theme: theme.name }));
+      }
       setCustomThemes(next);
-      if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
-      update({ theme: theme.name });
       setImportInput('');
       setImportOpen(false);
     } catch (e) {
       setImportError(e instanceof Error ? e.message : 'Invalid JSON');
+    } finally {
+      setBusy(false);
     }
   };
 
   const onRemoveCustomTheme = (name: string) => {
-    const next = customThemes.filter((t) => t.name !== name);
-    setCustomThemes(next);
-    if (store) void store.set(CUSTOM_THEMES_STORE_KEY, next);
-    if (settings.theme === name) update({ theme: 'vs-dark' });
+    Alert.alert('Remove theme?', `Remove “${name}” from this device?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            const next = customThemes.filter((t) => t.name !== name);
+            setBusy(true);
+            setStoreError(null);
+            try {
+              if (store) await store.set(CUSTOM_THEMES_STORE_KEY, next);
+              if (settings.theme === name && !(await update({ theme: 'vs-dark' }))) {
+                if (store) await store.set(CUSTOM_THEMES_STORE_KEY, customThemes);
+                return;
+              }
+              setCustomThemes(next);
+            } catch (error) {
+              setStoreError(errorMessage(error, 'Could not remove the theme.'));
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+      },
+    ]);
   };
 
-  const themeChoices = [
-    ...themes,
-    ...customThemes.map((t) => ({ id: t.name, label: t.name })),
-  ];
+  const themeChoices = [...themes, ...customThemes.map((t) => ({ id: t.name, label: t.name }))];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: ideTheme.colors.surface }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Settings</Text>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
+        {storeError && (
+          <Text
+            accessibilityRole="alert"
+            style={[styles.importError, { color: ideTheme.colors.danger }]}
+          >
+            {storeError}
+          </Text>
+        )}
         <Section title="Appearance">
           <Text style={styles.fieldLabel}>Color theme</Text>
           <View style={styles.themeRow}>
             {themeChoices.map((t) => (
               <Pressable
                 key={t.id}
-                onPress={() => update({ theme: t.id })}
+                disabled={busy}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: settings.theme === t.id, disabled: busy }}
+                accessibilityLabel={`Color theme ${t.label}`}
+                onPress={() => void update({ theme: t.id })}
                 style={[styles.themeChip, settings.theme === t.id && styles.themeChipActive]}
               >
                 <Text
@@ -185,17 +260,15 @@ export function SettingsPanel({
                 return (
                   <Pressable
                     key={m.name}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active, disabled: busy }}
+                    accessibilityLabel={`${installed ? 'Apply' : 'Install'} ${m.name}`}
                     onPress={() => void installMarketplaceTheme(m)}
-                    style={[
-                      styles.marketplaceRow,
-                      active && styles.marketplaceRowActive,
-                    ]}
+                    style={[styles.marketplaceRow, active && styles.marketplaceRowActive]}
                   >
                     <Text
-                      style={[
-                        styles.marketplaceName,
-                        active && styles.marketplaceNameActive,
-                      ]}
+                      style={[styles.marketplaceName, active && styles.marketplaceNameActive]}
                       numberOfLines={1}
                     >
                       {m.name}
@@ -216,7 +289,13 @@ export function SettingsPanel({
                   <Text style={styles.importedName} numberOfLines={1}>
                     {t.name}
                   </Text>
-                  <Pressable onPress={() => onRemoveCustomTheme(t.name)}>
+                  <Pressable
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${t.name}`}
+                    onPress={() => onRemoveCustomTheme(t.name)}
+                    style={{ minHeight: ideTheme.minimumTouchSize, justifyContent: 'center' }}
+                  >
                     <Text style={styles.removeText}>Remove</Text>
                   </Pressable>
                 </View>
@@ -236,7 +315,12 @@ export function SettingsPanel({
                 />
                 {importError && <Text style={styles.importError}>{importError}</Text>}
                 <View style={styles.importBtnRow}>
-                  <Pressable onPress={onImportTheme} style={styles.importBtnPrimary}>
+                  <Pressable
+                    disabled={busy}
+                    accessibilityRole="button"
+                    onPress={() => void onImportTheme()}
+                    style={styles.importBtnPrimary}
+                  >
                     <Text style={styles.importBtnPrimaryText}>Import</Text>
                   </Pressable>
                   <Pressable
@@ -252,7 +336,11 @@ export function SettingsPanel({
                 </View>
               </View>
             ) : (
-              <Pressable onPress={() => setImportOpen(true)} style={styles.importTrigger}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setImportOpen(true)}
+                style={styles.importTrigger}
+              >
                 <Text style={styles.importTriggerText}>+ Import VS Code theme…</Text>
               </Pressable>
             ))}
@@ -262,31 +350,31 @@ export function SettingsPanel({
           <NumberField
             label="Font size"
             value={settings.fontSize}
-            onChange={(v) => update({ fontSize: v })}
+            onChange={(v) => void update({ fontSize: v })}
             min={8}
             max={32}
           />
           <NumberField
             label="Tab size"
             value={settings.tabSize}
-            onChange={(v) => update({ tabSize: v })}
+            onChange={(v) => void update({ tabSize: v })}
             min={1}
             max={8}
           />
           <Toggle
             label="Word wrap"
             on={settings.wordWrap}
-            onChange={(v) => update({ wordWrap: v })}
+            onChange={(v) => void update({ wordWrap: v })}
           />
           <Toggle
             label="Minimap"
             on={settings.minimap}
-            onChange={(v) => update({ minimap: v })}
+            onChange={(v) => void update({ minimap: v })}
           />
           <Toggle
             label="Line numbers"
             on={settings.lineNumbers}
-            onChange={(v) => update({ lineNumbers: v })}
+            onChange={(v) => void update({ lineNumbers: v })}
           />
         </Section>
       </ScrollView>
@@ -322,6 +410,7 @@ function NumberField({
     <View style={styles.fieldRow}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
+        accessibilityLabel={label}
         value={text}
         onChangeText={setText}
         onEndEditing={() => {
@@ -346,7 +435,13 @@ function Toggle({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <Pressable onPress={() => onChange(!on)} style={styles.fieldRow}>
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: on }}
+      onPress={() => onChange(!on)}
+      style={styles.fieldRow}
+    >
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={[styles.switch, on && styles.switchOn]}>
         <View style={[styles.switchThumb, on && styles.switchThumbOn]} />
@@ -384,7 +479,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 28,
+    minHeight: 44,
   },
   fieldLabel: { fontSize: 12, color: '#d1d5db' },
   numberInput: {
@@ -401,6 +496,8 @@ const styles = StyleSheet.create({
   },
   themeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingLeft: 4 },
   themeChip: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
@@ -435,6 +532,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   importedRow: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -458,6 +556,8 @@ const styles = StyleSheet.create({
   importError: { fontSize: 11, color: '#fda4af' },
   importBtnRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   importBtnPrimary: {
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: '#7c3aed',
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -465,11 +565,15 @@ const styles = StyleSheet.create({
   },
   importBtnPrimaryText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   importBtnCancel: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   importBtnCancelText: { color: '#9ca3af', fontSize: 11 },
   importTrigger: {
+    minHeight: 44,
+    justifyContent: 'center',
     alignSelf: 'flex-start',
     marginTop: 8,
     paddingHorizontal: 10,
@@ -480,6 +584,7 @@ const styles = StyleSheet.create({
   },
   importTriggerText: { color: '#d1d5db', fontSize: 11 },
   marketplaceRow: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

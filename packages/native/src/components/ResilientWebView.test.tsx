@@ -68,6 +68,41 @@ describe('a surface that boots normally', () => {
     expect(q('s-loading')).toBeNull();
     expect(q('s-error')).toBeNull();
   });
+
+  it('waits for the embedded bridge when bridge readiness is enabled', () => {
+    mount(
+      <ResilientWebView
+        testID="s"
+        bridgeReadyGeneration={undefined}
+        source={{ html: '<p>ok</p>' }}
+      />,
+    );
+    act(() => handlers.onLoadEnd?.());
+    expect(q('s-loading')).toBeNull();
+
+    mount(
+      <ResilientWebView
+        key="controlled"
+        testID="s"
+        waitForBridgeReady
+        bridgeReadyGeneration={-1}
+        source={{ html: '' }}
+      />,
+    );
+    act(() => handlers.onLoadEnd?.());
+    expect(q('s-loading')).not.toBeNull();
+
+    mount(
+      <ResilientWebView
+        key="controlled"
+        testID="s"
+        waitForBridgeReady
+        bridgeReadyGeneration={0}
+        source={{ html: '' }}
+      />,
+    );
+    expect(q('s-loading')).toBeNull();
+  });
 });
 
 describe('a surface that dies', () => {
@@ -109,6 +144,16 @@ describe('a surface that dies', () => {
     expect(q('s-error')).not.toBeNull();
     expect(container.textContent).toContain('This file stopped responding');
     expect(q('s-retry')).not.toBeNull();
+  });
+
+  it('ignores load completion from a WebView generation that already failed', () => {
+    mount(<ResilientWebView testID="s" source={{ html: '' }} />);
+    const staleLoadEnd = handlers.onLoadEnd;
+    act(() => handlers.onError?.({ nativeEvent: {} }));
+    expect(q('s-loading')).not.toBeNull();
+
+    act(() => staleLoadEnd?.());
+    expect(q('s-loading')).not.toBeNull();
   });
 
   it('tells the platform it handled the death, so RN is not torn down with the view', () => {

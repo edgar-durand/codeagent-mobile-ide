@@ -16,6 +16,7 @@ import type {
   FileTreeEntry,
   FileTreeProvider,
 } from '@codeam/ide-core';
+import { useIDETheme } from '../theme';
 
 interface Props {
   provider: FileTreeProvider;
@@ -125,16 +126,16 @@ export function FileTreeSidebar({
   reloadKey,
   iconResolver,
 }: Props) {
+  const theme = useIDETheme();
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [files, setFiles] = useState<FileTreeEntry[]>([]);
   const [truncated, setTruncated] = useState(false);
-  const fetchKey = `${reloadKey ?? ''}|${debouncedQuery}`;
-  const [committedKey, setCommittedKey] = useState<string | null>(null);
-  const loading = committedKey !== fetchKey;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCounter, setRetryCounter] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const providerRef = useRef(provider);
-  providerRef.current = provider;
+  const previousProvider = useRef(provider);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQuery(query.trim()), 200);
@@ -142,25 +143,35 @@ export function FileTreeSidebar({
   }, [query]);
 
   useEffect(() => {
+    const providerChanged = previousProvider.current !== provider;
+    previousProvider.current = provider;
+    if (providerChanged) {
+      setFiles([]);
+      setTruncated(false);
+      setExpanded(new Set());
+    }
     let cancelled = false;
-    providerRef.current
+    setLoading(true);
+    setError(null);
+    provider
       .list(debouncedQuery || undefined)
       .then((payload) => {
         if (cancelled) return;
         setFiles(payload.files);
         setTruncated(payload.truncated);
-        setCommittedKey(fetchKey);
+        setError(null);
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (cancelled) return;
-        setFiles([]);
-        setTruncated(false);
-        setCommittedKey(fetchKey);
+        setError(cause instanceof Error ? cause.message : 'Unable to load workspace files.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, reloadKey, fetchKey]);
+  }, [provider, debouncedQuery, reloadKey, retryCounter]);
 
   const rows = useMemo<FlatRow[]>(() => {
     if (debouncedQuery.length > 0) {
@@ -188,7 +199,7 @@ export function FileTreeSidebar({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
       <View style={styles.searchRow}>
         <TextInput
           value={query}
@@ -197,20 +208,39 @@ export function FileTreeSidebar({
           placeholderTextColor="#6b7280"
           autoCapitalize="none"
           autoCorrect={false}
-          style={styles.searchInput}
+          style={[
+            styles.searchInput,
+            {
+              color: theme.colors.text,
+              borderColor: theme.colors.border,
+              fontSize: theme.typography.bodySize,
+            },
+          ]}
+          accessibilityLabel="Search workspace files"
         />
         {truncated ? (
-          <Text style={styles.truncatedNote}>
-            {files.length} files (truncated — refine search)
-          </Text>
+          <Text style={styles.truncatedNote}>{files.length} files (truncated — refine search)</Text>
         ) : null}
       </View>
+      {error ? (
+        <View style={styles.errorBanner} accessibilityRole="alert">
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading workspace files"
+            onPress={() => setRetryCounter((value) => value + 1)}
+            style={[styles.retryButton, { minHeight: theme.minimumTouchSize }]}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {loading && files.length === 0 ? (
         <View style={styles.placeholder}>
           <ActivityIndicator size="small" color="#a78bfa" />
           <Text style={styles.placeholderText}>Loading workspace…</Text>
         </View>
-      ) : rows.length === 0 ? (
+      ) : error && files.length === 0 ? null : rows.length === 0 ? (
         <View style={styles.placeholder}>
           <Text style={styles.placeholderText}>
             {query ? 'No files match.' : 'No files found.'}
@@ -233,7 +263,14 @@ export function FileTreeSidebar({
                   isSelected && styles.rowSelected,
                   pressed && styles.rowPressed,
                   { paddingLeft: 8 + item.depth * 12 },
+                  { minHeight: theme.minimumTouchSize },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.kind === 'folder' ? 'Folder' : 'File'} ${item.fullPath}`}
+                accessibilityState={{
+                  selected: isSelected,
+                  expanded: item.kind === 'folder' ? !!item.isOpen : undefined,
+                }}
               >
                 {item.kind === 'folder' ? (
                   <>
@@ -278,6 +315,7 @@ export function FileTreeSidebar({
                     styles.rowText,
                     item.kind === 'folder' && styles.rowTextFolder,
                     isSelected && styles.rowTextSelected,
+                    { color: isSelected ? theme.colors.text : theme.colors.textMuted },
                   ]}
                 >
                   {item.name}
@@ -312,11 +350,22 @@ const styles = StyleSheet.create({
   truncatedNote: { marginTop: 4, fontSize: 10, color: '#fcd34d' },
   placeholder: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 6 },
   placeholderText: { color: '#6b7280', fontSize: 11 },
+  errorBanner: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(244,63,94,0.1)',
+  },
+  errorText: { flex: 1, color: '#fecaca', fontSize: 11 },
+  retryButton: { minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  retryText: { color: '#c4b5fd', fontSize: 12, fontWeight: '600' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 4,
+    minHeight: 44,
     paddingRight: 8,
   },
   rowSelected: { backgroundColor: 'rgba(167,139,250,0.18)' },

@@ -10,12 +10,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type {
-  GitLogEntry,
-  GitProvider,
-  GitStatusEntry,
-  GitStatusPayload,
-} from '@codeam/ide-core';
+import type { GitLogEntry, GitProvider, GitStatusEntry, GitStatusPayload } from '@codeam/ide-core';
+import { useIDETheme } from '../theme';
 
 interface Props {
   provider: GitProvider;
@@ -91,8 +87,12 @@ type Row =
  * fixed-height sections wastes vertical space on phones.
  */
 export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Props) {
+  const theme = useIDETheme();
   const [status, setStatus] = useState<GitStatusPayload | null>(null);
   const [log, setLog] = useState<GitLogEntry[] | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [logError, setLogError] = useState<string | null>(null);
   const [reloadCounter, setReloadCounter] = useState(0);
   const [busy, setBusy] = useState<'commit' | 'push' | 'pull' | null>(null);
   const [message, setMessage] = useState('');
@@ -101,40 +101,71 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
   const [changesOpen, setChangesOpen] = useState(true);
   const [graphOpen, setGraphOpen] = useState(true);
   const providerRef = useRef(provider);
-  providerRef.current = provider;
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supportsLog = typeof provider.log === 'function';
 
   useEffect(() => {
+    const providerChanged = providerRef.current !== provider;
+    providerRef.current = provider;
+    if (providerChanged) {
+      setStatus(null);
+      setLog(null);
+    }
     let cancelled = false;
-    providerRef.current
+    setStatusLoading(true);
+    setStatusError(null);
+    setLogError(null);
+    provider
       .status()
       .then((p) => {
-        if (!cancelled) setStatus(p);
+        if (!cancelled) {
+          setStatus(p);
+          setStatusError(p.error ?? null);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setStatus(null);
+      .catch((cause: unknown) => {
+        if (!cancelled)
+          setStatusError(cause instanceof Error ? cause.message : 'Unable to load Git status.');
+      })
+      .finally(() => {
+        if (!cancelled) setStatusLoading(false);
       });
-    if (providerRef.current.log) {
-      providerRef.current
+    if (provider.log) {
+      provider
         .log(30)
         .then((entries) => {
           if (!cancelled) setLog(entries);
         })
-        .catch(() => {
-          if (!cancelled) setLog([]);
+        .catch((cause: unknown) => {
+          if (!cancelled)
+            setLogError(cause instanceof Error ? cause.message : 'Unable to load Git history.');
         });
     }
     return () => {
       cancelled = true;
     };
-  }, [reloadKey, reloadCounter]);
+  }, [provider, reloadKey, reloadCounter]);
+
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
 
   const reload = () => setReloadCounter((c) => c + 1);
   const flash = (kind: 'ok' | 'err', text: string) => {
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = null;
+    }
     if (kind === 'ok') {
       setOk(text);
       setError(null);
-      setTimeout(() => setOk(null), 2500);
+      flashTimerRef.current = setTimeout(() => {
+        setOk(null);
+        flashTimerRef.current = null;
+      }, 2500);
     } else {
       setError(text);
       setOk(null);
@@ -155,6 +186,8 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
         setMessage('');
         reload();
       }
+    } catch (cause) {
+      flash('err', cause instanceof Error ? cause.message : 'Commit failed.');
     } finally {
       setBusy(null);
     }
@@ -169,6 +202,8 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
         flash('ok', 'Pushed.');
         reload();
       }
+    } catch (cause) {
+      flash('err', cause instanceof Error ? cause.message : 'Push failed.');
     } finally {
       setBusy(null);
     }
@@ -184,6 +219,8 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
         flash('ok', pull ? 'Pulled.' : 'Fetched (manual merge required).');
         reload();
       }
+    } catch (cause) {
+      flash('err', cause instanceof Error ? cause.message : 'Pull failed.');
     } finally {
       setBusy(null);
     }
@@ -205,197 +242,262 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>{title ?? 'Source Control'}</Text>
-        <Pressable hitSlop={6}>
-          <Text style={styles.moreDots}>⋯</Text>
-        </Pressable>
       </View>
 
-      <FlatList
-        data={rows}
-        keyExtractor={(r, i) => {
-          if (r.kind === 'change') return `change:${r.entry.path}:${r.entry.code}`;
-          if (r.kind === 'commit') return `commit:${r.commit.sha}`;
-          return `${r.kind}:${i}`;
-        }}
-        renderItem={({ item }) => {
-          if (item.kind === 'changesHeader') {
-            return (
-              <View style={styles.sectionHeader}>
-                <Pressable onPress={() => setChangesOpen((o) => !o)} style={styles.sectionToggle}>
-                  <Text style={styles.chevron}>{item.open ? '▾' : '▸'}</Text>
-                  <Text style={styles.sectionLabel}>Changes</Text>
-                  {item.count > 0 ? (
-                    <View style={styles.countPill}>
-                      <Text style={styles.countText}>{item.count}</Text>
-                    </View>
-                  ) : null}
-                </Pressable>
-                <View style={styles.actionRow}>
-                  <IconBtn name="checkmark" disabled={!canCommit} onPress={() => void onCommit()} />
-                  <IconBtn
-                    name="arrow-down"
-                    disabled={busy !== null || !status?.upstream}
-                    onPress={() => void onPull()}
-                  />
-                  <IconBtn
-                    name="arrow-up"
-                    disabled={busy !== null || !status?.upstream}
-                    onPress={() => void onPush()}
-                  />
-                  <IconBtn name="refresh" onPress={reload} />
-                  <IconBtn name="ellipsis-horizontal" />
+      {statusError ? (
+        <View style={styles.errorBanner} accessibilityRole="alert">
+          <Text style={styles.errorBannerText}>{statusError}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Retry Git status"
+            onPress={reload}
+            style={styles.retryButton}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : statusLoading ? (
+        <View style={styles.refreshingRow} accessibilityRole="progressbar">
+          <ActivityIndicator size="small" color={theme.colors.accent} />
+          <Text style={styles.refreshingText}>
+            {status === null ? 'Loading status…' : 'Refreshing status…'}
+          </Text>
+        </View>
+      ) : null}
+
+      {status === null ? null : (
+        <FlatList
+          data={rows}
+          keyExtractor={(r, i) => {
+            if (r.kind === 'change') return `change:${r.entry.path}:${r.entry.code}`;
+            if (r.kind === 'commit') return `commit:${r.commit.sha}`;
+            return `${r.kind}:${i}`;
+          }}
+          renderItem={({ item }) => {
+            if (item.kind === 'changesHeader') {
+              return (
+                <View style={styles.sectionHeader}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Toggle changes"
+                    accessibilityState={{ expanded: item.open }}
+                    onPress={() => setChangesOpen((o) => !o)}
+                    style={styles.sectionToggle}
+                  >
+                    <Text style={styles.chevron}>{item.open ? '▾' : '▸'}</Text>
+                    <Text style={styles.sectionLabel}>Changes</Text>
+                    {item.count > 0 ? (
+                      <View style={styles.countPill}>
+                        <Text style={styles.countText}>{item.count}</Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                  <View style={styles.actionRow}>
+                    <IconBtn
+                      name="checkmark"
+                      label="Commit changes"
+                      disabled={!canCommit}
+                      onPress={() => void onCommit()}
+                    />
+                    <IconBtn
+                      name="arrow-down"
+                      label="Pull changes"
+                      disabled={busy !== null || !status?.upstream}
+                      onPress={() => void onPull()}
+                    />
+                    <IconBtn
+                      name="arrow-up"
+                      label="Push changes"
+                      disabled={busy !== null || !status?.upstream}
+                      onPress={() => void onPush()}
+                    />
+                    <IconBtn name="refresh" label="Refresh Git status" onPress={reload} />
+                  </View>
                 </View>
-              </View>
-            );
-          }
-          if (item.kind === 'composer') {
-            return (
-              <View style={styles.composer}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.prefixRow}
-                >
-                  {CC_PREFIXES.map((p) => (
+              );
+            }
+            if (item.kind === 'composer') {
+              return (
+                <View style={styles.composer}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.prefixRow}
+                  >
+                    {CC_PREFIXES.map((p) => (
+                      <Pressable
+                        key={p.type}
+                        onPress={() =>
+                          setMessage((prev) => applyCommitPrefix(prev, p.type, p.emoji))
+                        }
+                        style={({ pressed }) => [
+                          styles.prefixChip,
+                          pressed && styles.prefixChipPressed,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use ${p.type} commit prefix`}
+                      >
+                        <Text style={styles.prefixChipText}>
+                          {p.emoji ? `${p.emoji} ` : ''}
+                          {p.type}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                  <TextInput
+                    value={message}
+                    onChangeText={setMessage}
+                    placeholder={`Message (commit on "${branchLabel}")`}
+                    placeholderTextColor="#6b7280"
+                    style={styles.composerInput}
+                    multiline={false}
+                    returnKeyType="send"
+                    onSubmitEditing={() => {
+                      if (canCommit) void onCommit();
+                    }}
+                    accessibilityLabel="Commit message"
+                  />
+                  <View style={styles.commitBtnRow}>
                     <Pressable
-                      key={p.type}
-                      onPress={() =>
-                        setMessage((prev) => applyCommitPrefix(prev, p.type, p.emoji))
-                      }
-                      style={({ pressed }) => [
-                        styles.prefixChip,
-                        pressed && styles.prefixChipPressed,
-                      ]}
+                      disabled={!canCommit}
+                      onPress={onCommit}
+                      style={[styles.commitBtn, !canCommit && styles.commitBtnDisabled]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Commit changes"
+                      accessibilityState={{ disabled: !canCommit, busy: busy === 'commit' }}
                     >
-                      <Text style={styles.prefixChipText}>
-                        {p.emoji ? `${p.emoji} ` : ''}
-                        {p.type}
+                      <Ionicons name="checkmark" size={13} color="#fff" />
+                      <Text style={styles.commitBtnText}>
+                        {busy === 'commit' ? 'Committing…' : 'Commit'}
                       </Text>
                     </Pressable>
-                  ))}
-                </ScrollView>
-                <TextInput
-                  value={message}
-                  onChangeText={setMessage}
-                  placeholder={`Message (commit on "${branchLabel}")`}
-                  placeholderTextColor="#6b7280"
-                  style={styles.composerInput}
-                  multiline={false}
-                  returnKeyType="send"
-                  onSubmitEditing={() => {
-                    if (canCommit) void onCommit();
-                  }}
-                />
-                <View style={styles.commitBtnRow}>
-                  <Pressable
-                    disabled={!canCommit}
-                    onPress={onCommit}
-                    style={[styles.commitBtn, !canCommit && styles.commitBtnDisabled]}
-                  >
-                    <Ionicons name="checkmark" size={13} color="#fff" />
-                    <Text style={styles.commitBtnText}>
-                      {busy === 'commit' ? 'Committing…' : 'Commit'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    disabled={!canCommit}
-                    style={[styles.commitCaret, !canCommit && styles.commitBtnDisabled]}
-                  >
-                    <Text style={styles.commitBtnText}>▾</Text>
-                  </Pressable>
-                </View>
-                {error || ok ? (
-                  <View style={[styles.flash, error ? styles.flashErr : styles.flashOk]}>
-                    <Text
-                      style={[styles.flashText, error ? styles.flashErrText : styles.flashOkText]}
-                    >
-                      {error ?? ok}
-                    </Text>
                   </View>
-                ) : null}
-              </View>
-            );
-          }
-          if (item.kind === 'change') {
-            const chip = chipFor(item.entry);
-            return (
-              <Pressable onPress={() => onSelect?.(item.entry)} style={styles.changeRow}>
-                <Text style={styles.changeName} numberOfLines={1}>
-                  {item.entry.path.split('/').pop()}
-                </Text>
-                <Text style={styles.changeDir} numberOfLines={1}>
-                  {item.entry.path.replace(/\/[^/]+$/, '')}
-                </Text>
-                <Text style={[styles.changeChip, { color: chip.color }]}>{chip.label}</Text>
-              </Pressable>
-            );
-          }
-          if (item.kind === 'graphHeader') {
-            return (
-              <View style={[styles.sectionHeader, styles.graphHeader]}>
-                <Pressable onPress={() => setGraphOpen((o) => !o)} style={styles.sectionToggle}>
-                  <Text style={styles.chevron}>{item.open ? '▾' : '▸'}</Text>
-                  <Text style={styles.sectionLabel}>Graph</Text>
+                  {error || ok ? (
+                    <View style={[styles.flash, error ? styles.flashErr : styles.flashOk]}>
+                      <Text
+                        style={[styles.flashText, error ? styles.flashErrText : styles.flashOkText]}
+                      >
+                        {error ?? ok}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            }
+            if (item.kind === 'change') {
+              const chip = chipFor(item.entry);
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.entry.path}, status ${chip.label}`}
+                  disabled={!onSelect}
+                  onPress={() => onSelect?.(item.entry)}
+                  style={styles.changeRow}
+                >
+                  <Text style={styles.changeName} numberOfLines={1}>
+                    {item.entry.path.split('/').pop()}
+                  </Text>
+                  <Text style={styles.changeDir} numberOfLines={1}>
+                    {item.entry.path.replace(/\/[^/]+$/, '')}
+                  </Text>
+                  <Text style={[styles.changeChip, { color: chip.color }]}>{chip.label}</Text>
                 </Pressable>
-                <View style={styles.actionRow}>
-                  <IconBtn name="refresh" onPress={reload} />
-                  <IconBtn name="ellipsis-horizontal" />
+              );
+            }
+            if (item.kind === 'graphHeader') {
+              return (
+                <View style={[styles.sectionHeader, styles.graphHeader]}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Toggle Git graph"
+                    accessibilityState={{ expanded: item.open }}
+                    onPress={() => setGraphOpen((o) => !o)}
+                    style={styles.sectionToggle}
+                  >
+                    <Text style={styles.chevron}>{item.open ? '▾' : '▸'}</Text>
+                    <Text style={styles.sectionLabel}>Graph</Text>
+                  </Pressable>
+                  <View style={styles.actionRow}>
+                    <IconBtn name="refresh" label="Refresh Git history" onPress={reload} />
+                  </View>
                 </View>
+              );
+            }
+            // commit row
+            return (
+              <View style={styles.commitRow}>
+                <Text style={styles.commitDot}>{item.idx === 0 ? '○' : '●'}</Text>
+                <Text
+                  style={[styles.commitSubject, item.idx === 0 && styles.commitSubjectHead]}
+                  numberOfLines={1}
+                >
+                  {item.commit.subject}
+                </Text>
+                {item.commit.refs?.map((r) => (
+                  <View key={r} style={styles.refPill}>
+                    <Text style={styles.refPillText}>{r}</Text>
+                  </View>
+                ))}
+                <Text style={styles.commitTime}>{timeAgo(item.commit.timestamp)}</Text>
               </View>
             );
+          }}
+          ListEmptyComponent={() =>
+            statusLoading && status === null ? (
+              <View style={styles.empty}>
+                <ActivityIndicator size="small" color="#a78bfa" />
+                <Text style={styles.emptyText}>Loading status…</Text>
+              </View>
+            ) : statusError ? null : null
           }
-          // commit row
-          return (
-            <View style={styles.commitRow}>
-              <Text style={styles.commitDot}>{item.idx === 0 ? '○' : '●'}</Text>
-              <Text
-                style={[styles.commitSubject, item.idx === 0 && styles.commitSubjectHead]}
-                numberOfLines={1}
-              >
-                {item.commit.subject}
-              </Text>
-              {item.commit.refs?.map((r) => (
-                <View key={r} style={styles.refPill}>
-                  <Text style={styles.refPillText}>{r}</Text>
-                </View>
-              ))}
-              <Text style={styles.commitTime}>{timeAgo(item.commit.timestamp)}</Text>
-            </View>
-          );
-        }}
-        ListEmptyComponent={() =>
-          status === null ? (
-            <View style={styles.empty}>
-              <ActivityIndicator size="small" color="#a78bfa" />
-              <Text style={styles.emptyText}>Loading status…</Text>
-            </View>
-          ) : status.error ? (
-            <Text style={styles.errorText}>{status.error}</Text>
-          ) : null
-        }
-      />
+          ListFooterComponent={() =>
+            logError ? (
+              <View style={styles.logError} accessibilityRole="alert">
+                <Text style={styles.errorBannerText}>{logError}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry Git history"
+                  onPress={reload}
+                  style={styles.retryButton}
+                >
+                  <Text style={styles.retryText}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : null
+          }
+        />
+      )}
     </View>
   );
 }
 
 function IconBtn({
   name,
+  label,
   onPress,
   disabled,
 }: {
   name: 'checkmark' | 'refresh' | 'ellipsis-horizontal' | 'arrow-up' | 'arrow-down';
+  label: string;
   onPress?: () => void;
   disabled?: boolean;
 }) {
+  const theme = useIDETheme();
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      hitSlop={4}
-      style={[styles.iconBtn, disabled && styles.iconBtnDisabled]}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      style={[
+        styles.iconBtn,
+        { width: theme.minimumTouchSize, height: theme.minimumTouchSize },
+        disabled && styles.iconBtnDisabled,
+      ]}
     >
       <Ionicons name={name} size={13} color="#9ca3af" />
     </Pressable>
@@ -418,16 +520,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     color: '#9ca3af',
   },
-  moreDots: { color: '#6b7280', fontSize: 18, lineHeight: 18 },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    minHeight: 44,
   },
-  graphHeader: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1f2433', marginTop: 8 },
+  graphHeader: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#1f2433',
+    marginTop: 8,
+  },
   sectionToggle: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chevron: { width: 12, fontSize: 10, color: '#6b7280' },
   sectionLabel: {
@@ -447,8 +551,8 @@ const styles = StyleSheet.create({
   countText: { fontSize: 10, color: '#e5e7eb', fontWeight: '700' },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   iconBtn: {
-    width: 24,
-    height: 24,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 4,
@@ -483,14 +587,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(124,58,237,0.85)',
     paddingVertical: 7,
   },
-  commitCaret: {
-    paddingHorizontal: 10,
-    backgroundColor: 'rgba(124,58,237,0.85)',
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: 'rgba(167,139,250,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   commitBtnDisabled: { opacity: 0.4 },
   commitBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 
@@ -505,7 +601,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    minHeight: 44,
     gap: 6,
   },
   changeName: { fontSize: 12, color: '#e5e7eb', fontFamily: 'Menlo', flex: 1 },
@@ -516,7 +612,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 2,
+    minHeight: 44,
     gap: 6,
   },
   commitDot: { width: 12, fontSize: 12, color: '#60a5fa', textAlign: 'center' },
@@ -536,10 +632,36 @@ const styles = StyleSheet.create({
   empty: { padding: 24, alignItems: 'center', gap: 6 },
   emptyText: { fontSize: 11, color: '#6b7280' },
   errorText: { padding: 24, textAlign: 'center', color: '#fb7185', fontSize: 12 },
+  errorBanner: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(244,63,94,0.1)',
+  },
+  logError: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorBannerText: { flex: 1, color: '#fecaca', fontSize: 11 },
+  retryButton: { minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  retryText: { color: '#c4b5fd', fontSize: 12, fontWeight: '600' },
+  refreshingRow: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshingText: { color: '#9ca3af', fontSize: 11 },
   prefixRow: { gap: 4, paddingBottom: 6, paddingRight: 8 },
   prefixChip: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    minHeight: 44,
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#374151',

@@ -20,11 +20,22 @@ type StubProps = {
   onPress?: () => void;
   disabled?: boolean;
   testID?: string;
+  accessibilityLabel?: string;
+  accessibilityRole?: string;
+  accessibilityState?: Record<string, boolean | undefined>;
   [key: string]: unknown;
 };
 
 function domStub(tag: string, marker?: string) {
-  return function Stub({ children, onPress, disabled, testID }: StubProps) {
+  return function Stub({
+    children,
+    onPress,
+    disabled,
+    testID,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityState,
+  }: StubProps) {
     return createElement(
       tag,
       {
@@ -32,6 +43,12 @@ function domStub(tag: string, marker?: string) {
         disabled,
         'data-testid': testID,
         'data-rn': marker,
+        'aria-label': accessibilityLabel,
+        role: accessibilityRole,
+        'aria-selected': accessibilityState?.selected,
+        'aria-busy': accessibilityState?.busy,
+        'aria-checked': accessibilityState?.checked,
+        'aria-disabled': accessibilityState?.disabled,
       },
       children,
     );
@@ -44,7 +61,37 @@ vi.mock('react-native', () => ({
   TouchableOpacity: domStub('button'),
   Pressable: domStub('button'),
   ScrollView: domStub('div'),
-  TextInput: domStub('input'),
+  TextInput: ({
+    value,
+    onChangeText,
+    ...props
+  }: StubProps & { value?: string; onChangeText?: (value: string) => void }) =>
+    createElement('input', {
+      value,
+      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+      'aria-label': props.accessibilityLabel,
+    }),
+  FlatList: ({
+    data = [],
+    renderItem,
+    ListHeaderComponent,
+    ListEmptyComponent,
+  }: StubProps & {
+    data?: unknown[];
+    renderItem?: (info: { item: unknown; index: number }) => ReactNode;
+    ListHeaderComponent?: () => ReactNode;
+    ListEmptyComponent?: () => ReactNode;
+  }) =>
+    createElement(
+      'div',
+      null,
+      ListHeaderComponent?.(),
+      data.length === 0
+        ? ListEmptyComponent?.()
+        : data.map((item, index) =>
+            createElement('div', { key: index }, renderItem?.({ item, index })),
+          ),
+    ),
   ActivityIndicator: domStub('div', 'activity-indicator'),
   Modal: ({ children, visible = true }: StubProps & { visible?: boolean }) =>
     visible ? createElement('div', { 'data-rn': 'modal' }, children) : null,
@@ -56,6 +103,27 @@ vi.mock('react-native', () => ({
   },
   Platform: { OS: 'ios', select: (o: Record<string, unknown>) => o.ios ?? o.default },
   useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
+  Alert: { alert: vi.fn() },
+  Linking: {
+    canOpenURL: vi.fn(async () => true),
+    openURL: vi.fn(async () => undefined),
+  },
+  AccessibilityInfo: {
+    isReduceMotionEnabled: vi.fn(async () => false),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  Dimensions: {
+    get: vi.fn(() => ({ width: 390, height: 844, scale: 3, fontScale: 1 })),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  Animated: {
+    Value: class {
+      constructor(_value: number) {}
+    },
+    View: domStub('div'),
+    timing: vi.fn(() => ({ start: vi.fn() })),
+  },
+  PanResponder: { create: vi.fn(() => ({ panHandlers: {} })) },
 }));
 
 /**

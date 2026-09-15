@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react';
-import {
-  buildIconResolver,
-  parseJsonc,
-  type FileIconResolver,
-  type SettingsStore,
-  type VSCodeIconTheme,
-} from '@codeam/ide-core';
+import { buildIconResolver, type FileIconResolver, type SettingsStore } from '@codeam/ide-core';
 import {
   ACTIVE_ICON_THEME_STORE_KEY,
   deriveIconThemeBaseUrl,
   type ActiveIconTheme,
 } from '../components/MarketplacePanel';
+import { downloadMarketplaceJson, isVSCodeIconTheme } from '../utils/marketplaceDownload';
 
 /**
  * Native mirror of the web `useIconResolver`. Subscribes to the
@@ -35,22 +30,24 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
   useEffect(() => {
     if (!store) return;
     let cancelled = false;
-    void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      setActive(
-        v && typeof v === 'object' && 'id' in v && 'url' in v
-          ? (v as ActiveIconTheme)
-          : null,
-      );
-    });
-    const off = store.watch((key, value) => {
-      if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
-      setActive(
-        value && typeof value === 'object' && 'id' in value && 'url' in value
-          ? (value as ActiveIconTheme)
-          : null,
-      );
-    });
+    void store
+      .get(ACTIVE_ICON_THEME_STORE_KEY)
+      .then((v) => {
+        if (cancelled) return;
+        setActive(isActiveTheme(v) ? v : null);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) console.warn('[useIconResolver] failed to load active icon theme:', error);
+      });
+    let off: () => void = () => undefined;
+    try {
+      off = store.watch((key, value) => {
+        if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
+        setActive(isActiveTheme(value) ? value : null);
+      });
+    } catch (error) {
+      console.warn('[useIconResolver] failed to watch active icon theme:', error);
+    }
     return () => {
       cancelled = true;
       off();
@@ -63,25 +60,18 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
       return;
     }
     let cancelled = false;
-    void fetch(active.url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((text) => {
+    const controller = new AbortController();
+    void downloadMarketplaceJson(active.url, isVSCodeIconTheme, controller.signal)
+      .then((theme) => {
         if (cancelled) return;
         try {
-          const theme = parseJsonc<VSCodeIconTheme>(text);
           setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
         } catch (err) {
           // Theme JSON downloaded but parse / resolver build failed.
           // Loud here so users hit by malformed themes can see why
           // their tree went blank instead of guessing it's a network
           // issue.
-          console.warn(
-            `[useIconResolver] failed to build resolver from ${active.url}:`,
-            err,
-          );
+          console.warn(`[useIconResolver] failed to build resolver from ${active.url}:`, err);
           setResolver(null);
         }
       })
@@ -98,8 +88,13 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [active]);
 
   return resolver;
+}
+
+function isActiveTheme(value: unknown): value is ActiveIconTheme {
+  return !!value && typeof value === 'object' && 'id' in value && 'url' in value;
 }

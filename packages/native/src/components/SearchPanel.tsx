@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -10,11 +11,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { SearchHit, SearchOptions, SearchProvider, SearchResult } from '@codeam/ide-core';
+import { useIDETheme } from '../theme';
 
 interface Props {
   provider: SearchProvider;
   onOpen: (hit: SearchHit) => void;
   initialQuery?: string;
+  /** Override the native confirmation dialog, primarily for custom hosts and tests. */
+  confirmReplace?: (message: string, confirm: () => void) => void;
 }
 
 interface GroupedHits {
@@ -42,7 +46,8 @@ type Row =
  * results grouped by file. Uses FlatList for cheap virtualisation
  * on large result sets.
  */
-export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
+export function SearchPanel({ provider, onOpen, initialQuery, confirmReplace }: Props) {
+  const theme = useIDETheme();
   const [query, setQuery] = useState(initialQuery ?? '');
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery ?? '');
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -52,13 +57,15 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
   const [include, setInclude] = useState('');
   const [exclude, setExclude] = useState('');
   const [result, setResult] = useState<SearchResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCounter, setRetryCounter] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replacement, setReplacement] = useState('');
   const [replacing, setReplacing] = useState(false);
   const [replaceStatus, setReplaceStatus] = useState<string | null>(null);
-  const providerRef = useRef(provider);
-  providerRef.current = provider;
+  const previousProvider = useRef(provider);
   const replaceSupported = typeof provider.replace === 'function';
 
   const fetchKey = useMemo(
@@ -73,50 +80,73 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
       ].join('|'),
     [debouncedQuery, caseSensitive, wholeWord, regex, include, exclude],
   );
-  const [committedKey, setCommittedKey] = useState<string | null>(null);
-  const loading = debouncedQuery.length > 0 && committedKey !== fetchKey;
-
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(query.trim()), 250);
     return () => clearTimeout(id);
   }, [query]);
 
   useEffect(() => {
+    if (previousProvider.current !== provider) {
+      previousProvider.current = provider;
+      setResult(null);
+      setCollapsed(new Set());
+    }
     if (!debouncedQuery) {
       setResult(null);
-      setCommittedKey(fetchKey);
+      setError(null);
+      setLoading(false);
       return;
     }
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     const options: SearchOptions = {
       caseSensitive,
       wholeWord,
       regex,
       include: include
-        ? include.split(',').map((s) => s.trim()).filter(Boolean)
+        ? include
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : undefined,
       exclude: exclude
-        ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+        ? exclude
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : undefined,
     };
-    providerRef.current
+    provider
       .search(debouncedQuery, options)
       .then((r) => {
         if (!cancelled) {
           setResult(r);
-          setCommittedKey(fetchKey);
+          setError(null);
         }
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (!cancelled) {
-          setResult({ hits: [], truncated: false });
-          setCommittedKey(fetchKey);
+          setError(cause instanceof Error ? cause.message : 'Search failed.');
         }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, caseSensitive, wholeWord, regex, include, exclude, fetchKey]);
+  }, [
+    provider,
+    debouncedQuery,
+    caseSensitive,
+    wholeWord,
+    regex,
+    include,
+    exclude,
+    fetchKey,
+    retryCounter,
+  ]);
 
   const groups = useMemo(() => groupByFile(result?.hits ?? []), [result]);
 
@@ -141,9 +171,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
     });
   };
 
-  const runReplace = async (
-    targets?: Array<{ path: string; line?: number; column?: number }>,
-  ) => {
+  const runReplace = async (targets?: Array<{ path: string; line?: number; column?: number }>) => {
     if (!replaceSupported || !debouncedQuery || !provider.replace) return;
     setReplacing(true);
     setReplaceStatus(null);
@@ -156,10 +184,16 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
           wholeWord,
           regex,
           include: include
-            ? include.split(',').map((s) => s.trim()).filter(Boolean)
+            ? include
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
             : undefined,
           exclude: exclude
-            ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+            ? exclude
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
             : undefined,
         },
         targets,
@@ -168,7 +202,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
         `Replaced ${r.replaced} in ${r.filesChanged} file${r.filesChanged === 1 ? '' : 's'}.`,
       );
       // Re-run search so the result list reflects post-replace state.
-      setCommittedKey(null);
+      setRetryCounter((value) => value + 1);
     } catch (e) {
       setReplaceStatus(e instanceof Error ? e.message : 'Replace failed');
     } finally {
@@ -176,8 +210,21 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
     }
   };
 
+  const confirmReplaceAll = () => {
+    const hitCount = result?.total ?? result?.hits.length ?? 0;
+    const fileCount = groups.length;
+    const message = `Replace ${hitCount} match${hitCount === 1 ? '' : 'es'} in ${fileCount} file${fileCount === 1 ? '' : 's'}? This action cannot be undone.`;
+    const confirm = () => void runReplace();
+    if (confirmReplace) confirmReplace(message, confirm);
+    else
+      Alert.alert('Replace all?', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Replace All', style: 'destructive', onPress: confirm },
+      ]);
+  };
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
       <View style={styles.headerRow}>
         <Text style={styles.header}>Search</Text>
       </View>
@@ -192,17 +239,51 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
             placeholderTextColor="#6b7280"
             autoCapitalize="none"
             autoCorrect={false}
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                color: theme.colors.text,
+                fontSize: theme.typography.bodySize,
+                fontFamily: theme.typography.monoFamily,
+              },
+            ]}
+            accessibilityLabel="Search across files"
           />
         </View>
         <View style={styles.togglesRow}>
-          <ToggleBtn label="Aa" on={caseSensitive} onPress={() => setCaseSensitive((v) => !v)} />
-          <ToggleBtn label="ab" on={wholeWord} onPress={() => setWholeWord((v) => !v)} />
-          <ToggleBtn label=".*" on={regex} onPress={() => setRegex((v) => !v)} />
+          <ToggleBtn
+            label="Aa"
+            accessibilityLabel="Match case"
+            on={caseSensitive}
+            onPress={() => setCaseSensitive((v) => !v)}
+          />
+          <ToggleBtn
+            label="ab"
+            accessibilityLabel="Match whole word"
+            on={wholeWord}
+            onPress={() => setWholeWord((v) => !v)}
+          />
+          <ToggleBtn
+            label=".*"
+            accessibilityLabel="Use regular expression"
+            on={regex}
+            onPress={() => setRegex((v) => !v)}
+          />
           {replaceSupported && (
-            <ToggleBtn label="⇄" on={replaceOpen} onPress={() => setReplaceOpen((v) => !v)} />
+            <ToggleBtn
+              label="⇄"
+              accessibilityLabel="Toggle replace"
+              on={replaceOpen}
+              onPress={() => setReplaceOpen((v) => !v)}
+            />
           )}
-          <Pressable onPress={() => setShowAdvanced((v) => !v)} hitSlop={6}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Toggle file filters"
+            accessibilityState={{ expanded: showAdvanced }}
+            onPress={() => setShowAdvanced((v) => !v)}
+            style={[styles.advancedButton, { minHeight: theme.minimumTouchSize }]}
+          >
             <Text style={styles.advancedToggle}>
               {showAdvanced ? '▾ files to include / exclude' : '▸ files to include / exclude'}
             </Text>
@@ -224,8 +305,15 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
             </View>
             <Pressable
               disabled={!debouncedQuery || replacing}
-              onPress={() => void runReplace()}
-              style={[styles.replaceAllBtn, (!debouncedQuery || replacing) && { opacity: 0.5 }]}
+              onPress={confirmReplaceAll}
+              style={[
+                styles.replaceAllBtn,
+                { minHeight: theme.minimumTouchSize, backgroundColor: theme.colors.accent },
+                (!debouncedQuery || replacing) && { opacity: 0.5 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Replace all search results"
+              accessibilityState={{ disabled: !debouncedQuery || replacing }}
             >
               <Text style={styles.replaceAllText}>All</Text>
             </Pressable>
@@ -258,24 +346,41 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
         ) : null}
       </View>
 
+      {error ? (
+        <View style={styles.errorBanner} accessibilityRole="alert">
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Retry search"
+            onPress={() => setRetryCounter((value) => value + 1)}
+            style={[styles.retryButton, { minHeight: theme.minimumTouchSize }]}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {!debouncedQuery ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>Type to search…</Text>
         </View>
-      ) : loading ? (
+      ) : loading && result === null ? (
         <View style={styles.empty}>
           <ActivityIndicator size="small" color="#a78bfa" />
           <Text style={styles.emptyText}>Searching…</Text>
         </View>
       ) : groups.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyText}>No results.</Text>
-        </View>
+        error ? null : (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>No results.</Text>
+          </View>
+        )
       ) : (
         <FlatList
           data={rows}
           keyExtractor={(r, i) =>
-            r.kind === 'group' ? `g:${r.path}` : `h:${r.hit.path}:${r.hit.line}:${r.hit.column}:${i}`
+            r.kind === 'group'
+              ? `g:${r.path}`
+              : `h:${r.hit.path}:${r.hit.line}:${r.hit.column}:${i}`
           }
           ListHeaderComponent={() => (
             <Text style={styles.totalText}>
@@ -288,7 +393,13 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
           renderItem={({ item }) => {
             if (item.kind === 'group') {
               return (
-                <Pressable onPress={() => toggle(item.path)} style={styles.groupRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.path}, ${item.count} results`}
+                  accessibilityState={{ expanded: !item.collapsed }}
+                  onPress={() => toggle(item.path)}
+                  style={[styles.groupRow, { minHeight: theme.minimumTouchSize }]}
+                >
                   <Text style={styles.chevron}>{item.collapsed ? '▸' : '▾'}</Text>
                   <Ionicons name="document-outline" size={12} color="#6b7280" />
                   <Text style={styles.groupPath} numberOfLines={1}>
@@ -299,7 +410,12 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
               );
             }
             return (
-              <Pressable onPress={() => onOpen(item.hit)} style={styles.hitRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${item.hit.path} line ${item.hit.line}`}
+                onPress={() => onOpen(item.hit)}
+                style={[styles.hitRow, { minHeight: theme.minimumTouchSize }]}
+              >
                 <Text style={styles.hitText} numberOfLines={1}>
                   {item.hit.text}
                 </Text>
@@ -312,10 +428,39 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
   );
 }
 
-function ToggleBtn({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function ToggleBtn({
+  label,
+  accessibilityLabel,
+  on,
+  onPress,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  on: boolean;
+  onPress: () => void;
+}) {
+  const theme = useIDETheme();
   return (
-    <Pressable onPress={onPress} hitSlop={4} style={[styles.toggle, on && styles.toggleOn]}>
-      <Text style={[styles.toggleText, on && styles.toggleTextOn]}>{label}</Text>
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ checked: on }}
+      onPress={onPress}
+      style={[
+        styles.toggle,
+        { minWidth: theme.minimumTouchSize, height: theme.minimumTouchSize },
+        on && styles.toggleOn,
+      ]}
+    >
+      <Text
+        style={[
+          styles.toggleText,
+          { fontFamily: theme.typography.monoFamily },
+          on && styles.toggleTextOn,
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -357,8 +502,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#e5e7eb', fontSize: 12, paddingVertical: 4 },
   togglesRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   toggle: {
-    width: 22,
-    height: 22,
+    minWidth: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 4,
@@ -369,6 +514,7 @@ const styles = StyleSheet.create({
   toggleText: { fontSize: 10, color: '#6b7280', fontFamily: 'Menlo' },
   toggleTextOn: { color: '#ede9fe' },
   advancedToggle: { fontSize: 11, color: '#9ca3af', marginLeft: 4 },
+  advancedButton: { minHeight: 44, justifyContent: 'center' },
   advancedBlock: { gap: 6 },
   advancedInput: {
     backgroundColor: 'rgba(17,24,39,0.7)',
@@ -383,24 +529,36 @@ const styles = StyleSheet.create({
   },
   empty: { padding: 24, alignItems: 'center', gap: 6 },
   emptyText: { fontSize: 11, color: '#6b7280' },
+  errorBanner: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(244,63,94,0.1)',
+  },
+  errorText: { flex: 1, color: '#fecaca', fontSize: 11 },
+  retryButton: { minWidth: 64, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  retryText: { color: '#c4b5fd', fontSize: 12, fontWeight: '600' },
   totalText: { paddingHorizontal: 12, paddingVertical: 6, fontSize: 11, color: '#9ca3af' },
   groupRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    minHeight: 44,
     gap: 6,
   },
   chevron: { width: 12, fontSize: 10, color: '#6b7280' },
   groupPath: { flex: 1, fontSize: 12, color: '#e5e7eb', fontFamily: 'Menlo' },
   groupCount: { fontSize: 10, color: '#6b7280' },
-  hitRow: { paddingHorizontal: 32, paddingVertical: 2 },
+  hitRow: { paddingHorizontal: 32, minHeight: 44, justifyContent: 'center' },
   hitText: { fontSize: 11, color: '#d1d5db', fontFamily: 'Menlo' },
   replaceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   replaceAllBtn: {
     backgroundColor: '#7c3aed',
     paddingHorizontal: 8,
     paddingVertical: 4,
+    minHeight: 44,
     borderRadius: 4,
   },
   replaceAllText: { color: '#fff', fontSize: 10, fontWeight: '700' },

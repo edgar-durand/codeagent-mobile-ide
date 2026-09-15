@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { detectLanguage } from '@codeam/ide-core';
 import { useFileViewer } from './FileViewerContext';
+import { useIDETheme } from '../theme';
 
 /**
  * Build the HTML that hosts a Monaco editor inside a WebView. Monaco
@@ -21,7 +23,7 @@ import { useFileViewer } from './FileViewerContext';
  * prohibitive on cold-start. Consumers who need offline operation can
  * later self-host the assets and override this loader via a prop.
  */
-function buildEditorHtml(initialContent: string, language: string): string {
+function buildEditorHtml(initialContent: string, language: string, readOnly: boolean): string {
   const escaped = JSON.stringify(initialContent);
   const lang = JSON.stringify(language);
   return `<!DOCTYPE html>
@@ -54,6 +56,7 @@ function buildEditorHtml(initialContent: string, language: string): string {
         tabSize: 2,
         bracketPairColorization: { enabled: true },
         smoothScrolling: true,
+        readOnly: ${readOnly ? 'true' : 'false'},
       });
       window.__editor = editor;
       window.bridgeSetValue = (v) => editor.setValue(v);
@@ -90,6 +93,7 @@ function buildEditorHtml(initialContent: string, language: string): string {
  *     the header and footer out from under system UI.
  */
 export function FileViewerHost() {
+  const theme = useIDETheme();
   const { request, fetcher, close } = useFileViewer();
   const insets = useSafeAreaInsets();
   const [content, setContent] = useState<string | null>(null);
@@ -102,6 +106,8 @@ export function FileViewerHost() {
   const [readAttempt, setReadAttempt] = useState(0);
   const webRef = useRef<WebView>(null);
   const webReadyRef = useRef(false);
+  const webGenerationRef = useRef(0);
+  const [readyGeneration, setReadyGeneration] = useState<number | undefined>(undefined);
 
   // Reset + fetch when a new request arrives (or the user retries).
   useEffect(() => {
@@ -144,11 +150,14 @@ export function FileViewerHost() {
 
   const language = useMemo(() => (request ? detectLanguage(request.path) : 'plaintext'), [request]);
   const html = useMemo(
-    () => (content !== null ? buildEditorHtml(content, language) : null),
+    () =>
+      content !== null
+        ? buildEditorHtml(content, language, request?.op === 'Read' || !fetcher?.canWrite)
+        : null,
     // Build the WebView HTML once per file open — Monaco does its own DOM
     // diff for subsequent edits, no need to re-render the whole shell.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [request?.path, language, content !== null],
+    [request?.path, request?.op, fetcher?.canWrite, language, content !== null],
   );
 
   const onMessage = (event: WebViewMessageEvent) => {
@@ -160,8 +169,10 @@ export function FileViewerHost() {
         | { type: 'error'; value: string };
       if (msg.type === 'change') setContent(msg.value);
       else if (msg.type === 'save') void onSave();
-      else if (msg.type === 'ready') webReadyRef.current = true;
-      else if (msg.type === 'error') setError(msg.value);
+      else if (msg.type === 'ready') {
+        webReadyRef.current = true;
+        setReadyGeneration(webGenerationRef.current);
+      } else if (msg.type === 'error') setError(msg.value);
     } catch {
       /* malformed bridge message — ignore */
     }
@@ -169,6 +180,21 @@ export function FileViewerHost() {
 
   const dirty = content !== originalContent && originalContent !== null;
   const canSave = fetcher !== null && fetcher.canWrite && content !== null && dirty && !saving;
+  const requestClose = () => {
+    if (!dirty) {
+      close();
+      return;
+    }
+    Alert.alert('Discard unsaved changes?', `${request?.path ?? 'This file'} has not been saved.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: close },
+    ]);
+  };
+  const handleGenerationChange = useCallback((generation: number) => {
+    webGenerationRef.current = generation;
+    webReadyRef.current = false;
+    setReadyGeneration(undefined);
+  }, []);
 
   const onSave = async () => {
     if (!fetcher || content === null || !request) return;
@@ -192,12 +218,32 @@ export function FileViewerHost() {
   if (!request) return null;
 
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={close}>
-      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <Modal
+      visible
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={requestClose}
+    >
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            backgroundColor: theme.colors.surface,
+          },
+        ]}
+      >
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.dotsRow}>
-              <TouchableOpacity onPress={close} hitSlop={6}>
+              <TouchableOpacity
+                onPress={requestClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close file"
+                accessibilityHint={dirty ? 'Unsaved changes; confirmation required' : undefined}
+                hitSlop={12}
+              >
                 <View style={[styles.dot, { backgroundColor: '#ff5f56' }]} />
               </TouchableOpacity>
               <View style={[styles.dot, { backgroundColor: '#ffbd2e' }]} />
@@ -213,7 +259,14 @@ export function FileViewerHost() {
             <TouchableOpacity
               onPress={onSave}
               disabled={!canSave}
-              style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+              accessibilityRole="button"
+              accessibilityLabel="Save file"
+              accessibilityState={{ disabled: !canSave, busy: saving }}
+              style={[
+                styles.saveBtn,
+                { minHeight: theme.minimumTouchSize },
+                !canSave && styles.saveBtnDisabled,
+              ]}
               activeOpacity={0.8}
             >
               {saving ? (
@@ -225,7 +278,13 @@ export function FileViewerHost() {
                 {saving ? 'Saving' : 'Save'}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={close} hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}>
+            <TouchableOpacity
+              onPress={requestClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close file"
+              accessibilityHint={dirty ? 'Unsaved changes; confirmation required' : undefined}
+              hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+            >
               <Ionicons name="close" size={22} color="#bcb6cc" />
             </TouchableOpacity>
           </View>
@@ -233,7 +292,7 @@ export function FileViewerHost() {
         {/* With no content on screen the error owns the body (below); the bar
             is for failures on top of a displayed file (save, editor bridge). */}
         {error && html !== null && (
-          <View style={styles.errorBar}>
+          <View accessibilityRole="alert" style={styles.errorBar}>
             <Text style={styles.errorText} numberOfLines={3}>
               {error}
             </Text>
@@ -256,7 +315,13 @@ export function FileViewerHost() {
             <View style={styles.placeholder}>
               <Ionicons name="alert-circle-outline" size={28} color="#f87171" />
               <Text style={[styles.placeholderText, styles.verdictText]}>{error}</Text>
-              <TouchableOpacity onPress={retry} style={styles.retryBtn} activeOpacity={0.8}>
+              <TouchableOpacity
+                onPress={retry}
+                style={styles.retryBtn}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading file"
+              >
                 <Ionicons name="refresh-outline" size={14} color="#fff" />
                 <Text style={styles.retryText}>Retry</Text>
               </TouchableOpacity>
@@ -266,6 +331,9 @@ export function FileViewerHost() {
               surfaceLabel="file"
               loadingLabel="Opening file…"
               testID="file-surface"
+              waitForBridgeReady
+              bridgeReadyGeneration={readyGeneration}
+              onGenerationChange={handleGenerationChange}
               webViewRef={webRef}
               originWhitelist={['*']}
               source={{ html: html ?? '' }}

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   acceptBoth,
   acceptCurrent,
@@ -8,6 +8,7 @@ import {
   detectConflicts,
   type ConflictHunk,
 } from '@codeam/ide-core';
+import { useIDETheme } from '../theme';
 
 interface Props {
   content: string;
@@ -25,17 +26,24 @@ interface Props {
  * label combinations (e.g. branch names) don't wrap and break the
  * one-row layout on narrow phones.
  */
-export function ConflictBanner({
-  content,
-  onResolved,
-  currentLabel,
-  incomingLabel,
-}: Props) {
+export function ConflictBanner({ content, onResolved, currentLabel, incomingLabel }: Props) {
+  const theme = useIDETheme();
   const hunks = useMemo(() => detectConflicts(content), [content]);
   if (hunks.length === 0) return null;
 
   const resolveAll = (side: 'current' | 'incoming' | 'both') => {
-    onResolved(applyConflictResolutionAll(content, side));
+    Alert.alert(
+      'Resolve every conflict?',
+      `This will accept ${side} for all ${hunks.length} conflict${hunks.length === 1 ? '' : 's'}. Review the result before saving.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Resolve all',
+          style: 'destructive',
+          onPress: () => onResolved(applyConflictResolutionAll(content, side)),
+        },
+      ],
+    );
   };
 
   const resolveHunk = (hunk: ConflictHunk, side: 'current' | 'incoming' | 'both') => {
@@ -49,16 +57,26 @@ export function ConflictBanner({
   };
 
   return (
-    <View style={styles.container}>
+    <View accessibilityRole="alert" style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.headerText}>
           ⚠ {hunks.length} merge conflict{hunks.length === 1 ? '' : 's'}
         </Text>
         <View style={styles.headerBtns}>
-          <Pressable onPress={() => resolveAll('current')} style={styles.headerBtn}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Accept current version for every conflict"
+            onPress={() => resolveAll('current')}
+            style={[styles.headerBtn, { minHeight: theme.minimumTouchSize }]}
+          >
             <Text style={styles.headerBtnText}>All current</Text>
           </Pressable>
-          <Pressable onPress={() => resolveAll('incoming')} style={styles.headerBtn}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Accept incoming version for every conflict"
+            onPress={() => resolveAll('incoming')}
+            style={[styles.headerBtn, { minHeight: theme.minimumTouchSize }]}
+          >
             <Text style={styles.headerBtnText}>All incoming</Text>
           </Pressable>
         </View>
@@ -73,6 +91,8 @@ export function ConflictBanner({
               <View style={styles.hunkBtns}>
                 <Pressable
                   onPress={() => resolveHunk(h, 'current')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Accept current version for conflict at line ${h.startLine + 1}`}
                   style={[styles.hunkBtn, styles.hunkBtnCurrent]}
                 >
                   <Text style={styles.hunkBtnText}>
@@ -81,6 +101,8 @@ export function ConflictBanner({
                 </Pressable>
                 <Pressable
                   onPress={() => resolveHunk(h, 'incoming')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Accept incoming version for conflict at line ${h.startLine + 1}`}
                   style={[styles.hunkBtn, styles.hunkBtnIncoming]}
                 >
                   <Text style={styles.hunkBtnText}>
@@ -89,6 +111,8 @@ export function ConflictBanner({
                 </Pressable>
                 <Pressable
                   onPress={() => resolveHunk(h, 'both')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Accept both versions for conflict at line ${h.startLine + 1}`}
                   style={[styles.hunkBtn, styles.hunkBtnBoth]}
                 >
                   <Text style={styles.hunkBtnText}>Both</Text>
@@ -122,6 +146,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
+    justifyContent: 'center',
   },
   headerBtnText: { color: '#fef3c7', fontSize: 10 },
   list: { maxHeight: 140, paddingHorizontal: 10, paddingBottom: 6 },
@@ -137,6 +162,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
+    minHeight: 36,
+    justifyContent: 'center',
   },
   hunkBtnCurrent: { backgroundColor: 'rgba(4,120,87,0.45)' },
   hunkBtnIncoming: { backgroundColor: 'rgba(3,105,161,0.45)' },

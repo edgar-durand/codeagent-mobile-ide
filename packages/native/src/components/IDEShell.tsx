@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  Animated,
-  Dimensions,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Animated, AccessibilityInfo, Dimensions, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityBar, type ActivityBarItem } from './ActivityBar';
+import { useIDETheme } from '../theme';
 
 interface IDEShellProps {
   activityItems: ActivityBarItem[];
@@ -22,6 +18,10 @@ interface IDEShellProps {
   /** Viewport width (px) below which the side panel becomes a
    * drawer overlay. Default 600 — phones in portrait. */
   mobileBreakpoint?: number;
+  /** Apply device safe-area padding around the complete IDE shell. Default true. */
+  respectSafeArea?: boolean;
+  /** Maximum inactive panels retained in memory. Default 6. */
+  maxMountedPanels?: number;
 }
 
 /**
@@ -45,13 +45,25 @@ export function IDEShell({
   statusBar,
   sidePanelWidth = 280,
   mobileBreakpoint = 600,
+  respectSafeArea = true,
+  maxMountedPanels = 6,
 }: IDEShellProps) {
+  const theme = useIDETheme();
+  const insets = useSafeAreaInsets();
+  const [reduceMotion, setReduceMotion] = useState(false);
   const [width, setWidth] = useState(() => Dimensions.get('window').width);
   useEffect(() => {
     const sub = Dimensions.addEventListener('change', ({ window }) => setWidth(window.width));
     return () => sub.remove();
   }, []);
   const isMobile = width < mobileBreakpoint;
+  const effectivePanelWidth = Math.min(sidePanelWidth, Math.max(200, width - 92));
+
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => subscription.remove();
+  }, []);
 
   const handleSelect = (id: string) => {
     if (id === activeView) onViewChange(null);
@@ -66,12 +78,18 @@ export function IDEShell({
   useEffect(() => {
     if (!activeView) return;
     setMounted((prev) => {
-      if (prev.has(activeView)) return prev;
       const next = new Set(prev);
+      // Refresh insertion order so the set doubles as a small LRU.
+      next.delete(activeView);
       next.add(activeView);
+      while (next.size > Math.max(1, maxMountedPanels)) {
+        const oldest = next.values().next().value as string | undefined;
+        if (!oldest) break;
+        next.delete(oldest);
+      }
       return next;
     });
-  }, [activeView]);
+  }, [activeView, maxMountedPanels]);
 
   const persistentPanels = useMemo(
     () =>
@@ -83,17 +101,23 @@ export function IDEShell({
   const panelOpen = activeView !== null && mounted.has(activeView);
 
   // Drawer slide animation on mobile.
-  const slide = useState(() => new Animated.Value(panelOpen ? 0 : -sidePanelWidth))[0];
+  const slide = useState(() => new Animated.Value(panelOpen ? 0 : -effectivePanelWidth))[0];
   useEffect(() => {
     Animated.timing(slide, {
-      toValue: panelOpen ? 0 : -sidePanelWidth,
-      duration: 150,
+      toValue: panelOpen ? 0 : -effectivePanelWidth,
+      duration: reduceMotion ? 0 : 150,
       useNativeDriver: true,
     }).start();
-  }, [panelOpen, sidePanelWidth, slide]);
+  }, [effectivePanelWidth, panelOpen, reduceMotion, slide]);
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.colors.canvas },
+        respectSafeArea && { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
       {titleBar ? <View>{titleBar}</View> : null}
 
       <View style={styles.body}>
@@ -112,22 +136,26 @@ export function IDEShell({
             {panelOpen ? (
               <Pressable
                 accessibilityLabel="Close panel"
+                accessibilityRole="button"
+                accessibilityHint="Closes the navigation drawer"
                 onPress={() => onViewChange(null)}
-                style={styles.backdrop}
+                style={[styles.backdrop, { backgroundColor: theme.colors.overlay }]}
               />
             ) : null}
             <Animated.View
               pointerEvents={panelOpen ? 'auto' : 'none'}
               style={[
                 styles.drawer,
-                { width: sidePanelWidth, transform: [{ translateX: slide }] },
+                {
+                  width: effectivePanelWidth,
+                  backgroundColor: theme.colors.surface,
+                  borderRightColor: theme.colors.border,
+                  transform: [{ translateX: slide }],
+                },
               ]}
             >
               {persistentPanels.map((id) => (
-                <View
-                  key={id}
-                  style={{ flex: 1, display: id === activeView ? 'flex' : 'none' }}
-                >
+                <View key={id} style={{ flex: 1, display: id === activeView ? 'flex' : 'none' }}>
                   {panels[id]}
                 </View>
               ))}
@@ -139,7 +167,7 @@ export function IDEShell({
               style={[
                 styles.inlinePanel,
                 {
-                  width: panelOpen ? sidePanelWidth : 0,
+                  width: panelOpen ? effectivePanelWidth : 0,
                   borderRightWidth: panelOpen ? StyleSheet.hairlineWidth : 0,
                 },
               ]}
@@ -150,7 +178,7 @@ export function IDEShell({
                   style={{
                     flex: 1,
                     display: id === activeView ? 'flex' : 'none',
-                    width: sidePanelWidth,
+                    width: effectivePanelWidth,
                   }}
                 >
                   {panels[id]}

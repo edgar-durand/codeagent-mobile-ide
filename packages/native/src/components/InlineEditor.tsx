@@ -1,11 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
@@ -20,6 +14,7 @@ import {
 } from '@codeam/ide-core';
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
 import { ConflictBanner } from './ConflictBanner';
+import { useIDETheme } from '../theme';
 
 interface Props {
   fetcher: FileFetcher | null;
@@ -41,7 +36,12 @@ interface Props {
   onAfterSave?: (path: string) => void;
 }
 
-function buildEditorHtml(initial: string, language: string, settings: EditorSettingsSnapshot) {
+function buildEditorHtml(
+  initial: string,
+  language: string,
+  settings: EditorSettingsSnapshot,
+  readOnly: boolean,
+) {
   const value = JSON.stringify(initial);
   const lang = JSON.stringify(language);
   // Inline the bundled custom themes (github-dark, github-light)
@@ -99,6 +99,7 @@ function buildEditorHtml(initial: string, language: string, settings: EditorSett
         lineNumbers: ${settings.lineNumbers ? "'on'" : "'off'"},
         bracketPairColorization: { enabled: true },
         smoothScrolling: true,
+        readOnly: ${readOnly ? 'true' : 'false'},
       });
       window.__editor = editor;
       window.bridgeSetValue = (v) => editor.setValue(v);
@@ -154,36 +155,49 @@ export function InlineEditor({
   onClose,
   onAfterSave,
 }: Props) {
+  const theme = useIDETheme();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState<number | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
   const [settings, setSettings] = useState<EditorSettingsSnapshot>(DEFAULT_EDITOR_SETTINGS);
   const [customThemes, setCustomThemes] = useState<MonacoTheme[]>([]);
   const webRef = useRef<WebView>(null);
   const webReadyRef = useRef(false);
+  const webGenerationRef = useRef(0);
+  const [readyGeneration, setReadyGeneration] = useState<number | undefined>(undefined);
   const fetcherRef = useRef(fetcher);
+  const loadedByFetcherRef = useRef(new Map<string, FileFetcher>());
+  const savedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   fetcherRef.current = fetcher;
 
   // Pull settings from the store and watch for changes.
   useEffect(() => {
     if (!settingsStore) return;
     let active = true;
-    void settingsStore.get('editor').then((v) => {
-      if (!active) return;
-      if (isSnapshot(v)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...v });
+    void Promise.all([
+      settingsStore.get('editor').then((v) => {
+        if (active && isSnapshot(v)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...v });
+      }),
+      settingsStore.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
+        if (active && Array.isArray(v)) setCustomThemes(v as MonacoTheme[]);
+      }),
+    ]).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : 'Could not load settings.');
     });
-    void settingsStore.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
-      if (!active) return;
-      if (Array.isArray(v)) setCustomThemes(v as MonacoTheme[]);
-    });
-    const off = settingsStore.watch((key, value) => {
-      if (key === 'editor' && isSnapshot(value)) {
-        setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
-      } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-        setCustomThemes(value as MonacoTheme[]);
-      }
-    });
+    let off = () => {};
+    try {
+      off = settingsStore.watch((key, value) => {
+        if (key === 'editor' && isSnapshot(value)) {
+          setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+        } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+          setCustomThemes(value as MonacoTheme[]);
+        }
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not watch settings.');
+    }
     return () => {
       active = false;
       off();
@@ -221,13 +235,13 @@ export function InlineEditor({
 
   // Lazy-load file content on first open.
   useEffect(() => {
-    if (!path || !fetcherRef.current) return;
-    if (buffers[path] !== undefined) return;
+    if (!path || !fetcher) return;
+    if (buffers[path] !== undefined && loadedByFetcherRef.current.get(path) === fetcher) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     webReadyRef.current = false;
-    fetcherRef.current
+    fetcher
       .read(path)
       .then((r) => {
         if (cancelled) return;
@@ -236,6 +250,7 @@ export function InlineEditor({
           return;
         }
         const content = r.content ?? '';
+        loadedByFetcherRef.current.set(path, fetcher);
         setBuffers((prev) => ({ ...prev, [path]: content }));
         setSaved((prev) => ({ ...prev, [path]: content }));
       })
@@ -249,11 +264,13 @@ export function InlineEditor({
     return () => {
       cancelled = true;
     };
-  }, [path, buffers, setBuffers, setSaved]);
+  }, [path, fetcher, buffers, setBuffers, setSaved, readAttempt]);
 
   const language = useMemo(() => (path ? detectLanguage(path) : 'plaintext'), [path]);
-  const content = path ? buffers[path] : undefined;
-  const original = path ? saved[path] : undefined;
+  const content =
+    path && fetcher && loadedByFetcherRef.current.get(path) === fetcher ? buffers[path] : undefined;
+  const original =
+    path && fetcher && loadedByFetcherRef.current.get(path) === fetcher ? saved[path] : undefined;
   const dirty =
     path !== null && content !== undefined && original !== undefined && content !== original;
   const canSave =
@@ -263,13 +280,32 @@ export function InlineEditor({
     content !== undefined &&
     dirty &&
     !saving;
+  const requestClose = () => {
+    if (!onClose) return;
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    Alert.alert('Discard unsaved changes?', `${path ?? 'This file'} has not been saved.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onClose },
+    ]);
+  };
+  const handleGenerationChange = useCallback((generation: number) => {
+    webGenerationRef.current = generation;
+    webReadyRef.current = false;
+    setReadyGeneration(undefined);
+  }, []);
 
   // Build the WebView HTML once per file open — the bridge mutates
   // the buffer afterwards so we don't reload Monaco on every keystroke.
   const html = useMemo(
-    () => (content !== undefined ? buildEditorHtml(content, language, settings) : null),
+    () =>
+      content !== undefined
+        ? buildEditorHtml(content, language, settings, !fetcher?.canWrite)
+        : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [path, language, content !== undefined],
+    [path, language, content !== undefined, fetcher?.canWrite],
   );
 
   const onMessage = (e: WebViewMessageEvent) => {
@@ -281,6 +317,7 @@ export function InlineEditor({
         void onSave();
       } else if (msg.type === 'ready') {
         webReadyRef.current = true;
+        setReadyGeneration(webGenerationRef.current);
         // Flush any user-imported themes loaded BEFORE the WebView
         // signalled ready (common path: settings store resolves
         // before the WebView's `require()` finishes downloading
@@ -311,7 +348,8 @@ export function InlineEditor({
       }
       setSaved((prev) => ({ ...prev, [path]: content }));
       setSavedFlash(Date.now());
-      setTimeout(() => setSavedFlash(null), 2500);
+      if (savedFlashTimerRef.current) clearTimeout(savedFlashTimerRef.current);
+      savedFlashTimerRef.current = setTimeout(() => setSavedFlash(null), 2500);
       onAfterSave?.(path);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed.');
@@ -320,53 +358,69 @@ export function InlineEditor({
     }
   };
 
+  useEffect(
+    () => () => {
+      if (savedFlashTimerRef.current) clearTimeout(savedFlashTimerRef.current);
+    },
+    [],
+  );
+
   if (!path) {
     return (
       <View style={styles.placeholder}>
         <Ionicons name="folder-outline" size={28} color="#6b7280" />
         <Text style={styles.placeholderTitle}>No file open</Text>
-        <Text style={styles.placeholderText}>
-          Pick a file from the explorer to start editing.
-        </Text>
+        <Text style={styles.placeholderText}>Pick a file from the explorer to start editing.</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
       <View style={styles.statusBar}>
         <Text style={styles.pathText} numberOfLines={1}>
           {path}
         </Text>
         <View style={styles.statusActions}>
-          {savedFlash !== null && !dirty ? (
-            <Text style={styles.savedHint}>Saved</Text>
-          ) : null}
+          {savedFlash !== null && !dirty ? <Text style={styles.savedHint}>Saved</Text> : null}
           <Pressable
             onPress={onSave}
             disabled={!canSave}
-            style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Save file"
+            accessibilityState={{ disabled: !canSave, busy: saving }}
+            style={[
+              styles.saveBtn,
+              { minHeight: theme.minimumTouchSize },
+              !canSave && styles.saveBtnDisabled,
+            ]}
           >
             <Ionicons name="save-outline" size={13} color="#fff" />
             <Text style={styles.saveBtnText}>{saving ? 'Saving' : 'Save'}</Text>
           </Pressable>
           {onClose ? (
-            <Pressable onPress={onClose} hitSlop={6}>
+            <Pressable
+              onPress={requestClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close file"
+              accessibilityHint={dirty ? 'Unsaved changes; confirmation required' : undefined}
+              hitSlop={12}
+            >
               <Ionicons name="close" size={18} color="#9ca3af" />
             </Pressable>
           ) : null}
         </View>
       </View>
       {error ? (
-        <View style={styles.errorBar}>
+        <View accessibilityRole="alert" style={styles.errorBar}>
           <Text style={styles.errorText} numberOfLines={2}>
             {error}
           </Text>
         </View>
       ) : null}
-      {path && buffers[path] !== undefined ? (
+      {path && content !== undefined ? (
         <ConflictBanner
-          content={buffers[path] ?? ''}
+          content={content}
           onResolved={(next) => {
             // Update the React-side buffer so the dirty indicator
             // flips, AND push the new content into the WebView via
@@ -384,23 +438,40 @@ export function InlineEditor({
         />
       ) : null}
       <View style={styles.body}>
-        {loading || html === null ? (
-          <View style={styles.loading}>
-            <ActivityIndicator size="small" color="#a78bfa" />
-            <Text style={styles.loadingText}>Fetching {path}…</Text>
-          </View>
-        ) : !fetcher ? (
+        {!fetcher ? (
           <View style={styles.placeholder}>
             <Ionicons name="cloud-offline-outline" size={26} color="#6b7280" />
             <Text style={styles.placeholderText}>
               No active session. Pair an IDE plugin or CLI first.
             </Text>
           </View>
+        ) : loading || (html === null && error === null) ? (
+          <View style={styles.loading}>
+            <ActivityIndicator size="small" color="#a78bfa" />
+            <Text style={styles.loadingText}>Fetching {path}…</Text>
+          </View>
+        ) : html === null ? (
+          <View style={styles.placeholder}>
+            <Ionicons name="alert-circle-outline" size={28} color={theme.colors.danger} />
+            <Text style={styles.placeholderText}>{error ?? 'Could not read file.'}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading file"
+              onPress={() => setReadAttempt((attempt) => attempt + 1)}
+              style={[styles.saveBtn, { minHeight: theme.minimumTouchSize }]}
+            >
+              <Ionicons name="refresh-outline" size={14} color="#fff" />
+              <Text style={styles.saveBtnText}>Retry</Text>
+            </Pressable>
+          </View>
         ) : (
           <ResilientWebView
             surfaceLabel="editor"
             loadingLabel="Opening editor…"
             testID="editor-surface"
+            waitForBridgeReady
+            bridgeReadyGeneration={readyGeneration}
+            onGenerationChange={handleGenerationChange}
             webViewRef={webRef}
             originWhitelist={['*']}
             source={{ html }}
