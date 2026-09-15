@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.12.0] — 2026-09-15
+
+### Added
+
+- **native:** Harden mobile UX and error recovery
+
+### Documentation
+
+- **meta:** Add coding agent guidance and task context
+
 ## [0.11.6] — 2026-09-15
 
 ### Fixed
