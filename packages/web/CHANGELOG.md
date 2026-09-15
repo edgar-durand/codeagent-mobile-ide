@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.11.6] — 2026-09-15
+
+### Fixed
+
+- **native:** A WebView surface can never fail silently again
+
 ## [0.11.5] — 2026-09-08
 
 ### CI
