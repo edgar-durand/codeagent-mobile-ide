@@ -1,0 +1,9 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "codeagent_mobile_ide_45b0d682",
+  "project_id": "75265c53-b38e-4e7f-be07-100955cc3d49",
+  "global_dolt_database": "beads_global",
+  "global_project_id": "00000000-0000-0000-0000-000000000000"
+}
