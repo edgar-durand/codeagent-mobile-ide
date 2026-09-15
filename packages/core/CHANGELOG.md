@@ -6,6 +6,16 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.11.5] — 2026-09-08
+
+### CI
+
+- Workflow results reported to Discord #ci_notifications (#1)
+
+### Fixed
+
+- **native:** Show the read verdict in the FileViewerHost body with a Retry button (#2)
+
 ## [0.11.4] — 2026-06-06
 
 ### Fixed
