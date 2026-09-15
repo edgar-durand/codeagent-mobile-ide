@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import type { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { ResilientWebView } from './ResilientWebView';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { detectLanguage } from '@codeam/ide-core';
@@ -261,8 +262,11 @@ export function FileViewerHost() {
               </TouchableOpacity>
             </View>
           ) : (
-            <WebView
-              ref={webRef}
+            <ResilientWebView
+              surfaceLabel="file"
+              loadingLabel="Opening file…"
+              testID="file-surface"
+              webViewRef={webRef}
               originWhitelist={['*']}
               source={{ html: html ?? '' }}
               style={styles.webview}

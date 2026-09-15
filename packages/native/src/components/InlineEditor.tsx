@@ -7,7 +7,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import type { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { ResilientWebView } from './ResilientWebView';
 import {
   BUNDLED_CUSTOM_THEMES,
   DEFAULT_EDITOR_SETTINGS,
@@ -396,8 +397,11 @@ export function InlineEditor({
             </Text>
           </View>
         ) : (
-          <WebView
-            ref={webRef}
+          <ResilientWebView
+            surfaceLabel="editor"
+            loadingLabel="Opening editor…"
+            testID="editor-surface"
+            webViewRef={webRef}
             originWhitelist={['*']}
             source={{ html }}
             style={styles.webview}

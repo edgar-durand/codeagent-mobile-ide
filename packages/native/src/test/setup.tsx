@@ -67,12 +67,31 @@ export interface WebViewStubElement extends HTMLElement {
   __onMessage?: (event: { nativeEvent: { data: string } }) => void;
 }
 
+/**
+ * The WebView stub fires `onLoadEnd` on mount.
+ *
+ * ⚠️ Not cosmetic. `ResilientWebView` keeps a spinner over the surface until
+ * it can prove the view loaded, and arms a watchdog that fails the surface if
+ * that proof never arrives. A stub that never loads makes every host
+ * component look permanently stuck in tests — and, worse, would let a real
+ * regression in that handshake pass CI unnoticed. A WebView loads; the stub
+ * says so.
+ */
 vi.mock('react-native-webview', () => ({
-  WebView: ({ onMessage }: { onMessage?: WebViewStubElement['__onMessage'] }) =>
+  WebView: ({
+    onMessage,
+    onLoadEnd,
+  }: {
+    onMessage?: WebViewStubElement['__onMessage'];
+    onLoadEnd?: () => void;
+  }) =>
     createElement('div', {
       'data-rn': 'webview',
       ref: (el: WebViewStubElement | null) => {
-        if (el) el.__onMessage = onMessage;
+        if (el) {
+          el.__onMessage = onMessage;
+          onLoadEnd?.();
+        }
       },
     }),
 }));

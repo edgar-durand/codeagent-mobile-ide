@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { WebView } from 'react-native-webview';
+import { ResilientWebView } from './ResilientWebView';
 import { detectLanguage, type FileFetcher, type GitProvider } from '@codeam/ide-core';
 
 interface Props {
@@ -207,7 +207,10 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
             <Text style={styles.loadingText}>Loading diff…</Text>
           </View>
         ) : (
-          <WebView
+          <ResilientWebView
+            surfaceLabel="diff"
+            loadingLabel="Rendering diff…"
+            testID="diff-surface"
             originWhitelist={['*']}
             source={{ html }}
             style={styles.webview}

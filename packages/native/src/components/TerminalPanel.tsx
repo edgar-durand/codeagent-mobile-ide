@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import type { WebView, WebViewMessageEvent } from 'react-native-webview';
+import { ResilientWebView } from './ResilientWebView';
 import type { TerminalProvider, TerminalSession } from '@codeam/ide-core';
 
 interface Props {
@@ -173,8 +174,11 @@ export function TerminalPanel({ provider, cwd, rows = 24, cols = 80, title }: Pr
           <Text style={styles.runningText}>{ready ? 'running' : 'starting…'}</Text>
         )}
       </View>
-      <WebView
-        ref={webRef}
+      <ResilientWebView
+        surfaceLabel="terminal"
+        loadingLabel="Starting terminal…"
+        testID="terminal-surface"
+        webViewRef={webRef}
         originWhitelist={['*']}
         source={{ html }}
         style={styles.webview}
