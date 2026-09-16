@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SearchHit, SearchOptions, SearchProvider, SearchResult } from '@codeam/ide-core';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  runCancellable,
+  type SearchHit,
+  type SearchOptions,
+  type SearchProvider,
+  type SearchResult,
+} from '@codeam/ide-core';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   provider: SearchProvider;
@@ -52,8 +59,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
   const [replacement, setReplacement] = useState('');
   const [replacing, setReplacing] = useState(false);
   const [replaceStatus, setReplaceStatus] = useState<string | null>(null);
-  const providerRef = useRef(provider);
-  providerRef.current = provider;
+  const { adapterRef: providerRef } = useAsyncAdapter(provider);
   const replaceSupported = typeof provider.replace === 'function';
 
   const fetchKey = useMemo(
@@ -76,42 +82,37 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
     return () => clearTimeout(id);
   }, [query]);
 
-  useEffect(() => {
-    if (!debouncedQuery) {
-      setResult(null);
-      setCommittedKey(fetchKey);
-      return;
-    }
-    let cancelled = false;
-    const options: SearchOptions = {
-      caseSensitive,
-      wholeWord,
-      regex,
-      include: include
-        ? include.split(',').map((s) => s.trim()).filter(Boolean)
-        : undefined,
-      exclude: exclude
-        ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
-        : undefined,
-    };
-    providerRef.current
-      .search(debouncedQuery, options)
-      .then((r) => {
-        if (!cancelled) {
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        if (!debouncedQuery) {
+          setResult(null);
+          setCommittedKey(fetchKey);
+          return;
+        }
+        const options: SearchOptions = {
+          caseSensitive,
+          wholeWord,
+          regex,
+          include: include
+            ? include.split(',').map((s) => s.trim()).filter(Boolean)
+            : undefined,
+          exclude: exclude
+            ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+            : undefined,
+        };
+        try {
+          const r = await providerRef.current.search(debouncedQuery, options);
+          if (isCancelled()) return;
           setResult(r);
-          setCommittedKey(fetchKey);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
+        } catch {
+          if (isCancelled()) return;
           setResult({ hits: [], truncated: false });
-          setCommittedKey(fetchKey);
         }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedQuery, caseSensitive, wholeWord, regex, include, exclude, fetchKey]);
+        setCommittedKey(fetchKey);
+      }),
+    [debouncedQuery, caseSensitive, wholeWord, regex, include, exclude, fetchKey, providerRef],
+  );
 
   const groups = useMemo(() => groupByFile(result?.hits ?? []), [result]);
   const totalHits = result?.total ?? result?.hits.length ?? 0;

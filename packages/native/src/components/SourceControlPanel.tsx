@@ -8,7 +8,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { GitLogEntry, GitProvider, GitStatusEntry, GitStatusPayload } from '@codeam/ide-core';
+import {
+  runCancellable,
+  type GitLogEntry,
+  type GitProvider,
+  type GitStatusEntry,
+  type GitStatusPayload,
+} from '@codeam/ide-core';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 import { useIDETheme } from '../theme';
 import { CommitComposer } from './CommitComposer';
 import { ChangesList } from './ChangesList';
@@ -41,58 +48,56 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [logError, setLogError] = useState<string | null>(null);
-  const [reloadCounter, setReloadCounter] = useState(0);
+  const { adapterRef: providerRef, reloadCount, reload } = useAsyncAdapter(provider);
   const [busy, setBusy] = useState<'commit' | 'push' | 'pull' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [changesOpen, setChangesOpen] = useState(true);
   const [graphOpen, setGraphOpen] = useState(true);
-  const providerRef = useRef(provider);
+  const previousProviderRef = useRef(provider);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supportsLog = typeof provider.log === 'function';
 
-  useEffect(() => {
-    const providerChanged = providerRef.current !== provider;
-    providerRef.current = provider;
-    if (providerChanged) {
-      setStatus(null);
-      setLog(null);
-    }
-    let cancelled = false;
-    setStatusLoading(true);
-    setStatusError(null);
-    setLogError(null);
-    provider
-      .status()
-      .then((p) => {
-        if (!cancelled) {
-          setStatus(p);
-          setStatusError(p.error ?? null);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        const providerChanged = previousProviderRef.current !== provider;
+        previousProviderRef.current = provider;
+        if (providerChanged) {
+          setStatus(null);
+          setLog(null);
         }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled)
-          setStatusError(cause instanceof Error ? cause.message : 'Unable to load Git status.');
-      })
-      .finally(() => {
-        if (!cancelled) setStatusLoading(false);
-      });
-    if (provider.log) {
-      provider
-        .log(30)
-        .then((entries) => {
-          if (!cancelled) setLog(entries);
-        })
-        .catch((cause: unknown) => {
-          if (!cancelled)
-            setLogError(cause instanceof Error ? cause.message : 'Unable to load Git history.');
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [provider, reloadKey, reloadCounter]);
+        setStatusLoading(true);
+        setStatusError(null);
+        setLogError(null);
+        void provider
+          .status()
+          .then((p) => {
+            if (!isCancelled()) {
+              setStatus(p);
+              setStatusError(p.error ?? null);
+            }
+          })
+          .catch((cause: unknown) => {
+            if (!isCancelled())
+              setStatusError(cause instanceof Error ? cause.message : 'Unable to load Git status.');
+          })
+          .finally(() => {
+            if (!isCancelled()) setStatusLoading(false);
+          });
+        void provider
+          .log?.(30)
+          .then((entries) => {
+            if (!isCancelled()) setLog(entries);
+          })
+          .catch((cause: unknown) => {
+            if (!isCancelled())
+              setLogError(cause instanceof Error ? cause.message : 'Unable to load Git history.');
+          });
+      }),
+    [provider, reloadKey, reloadCount],
+  );
 
   useEffect(
     () => () => {
@@ -101,7 +106,6 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
     [],
   );
 
-  const reload = () => setReloadCounter((c) => c + 1);
   const flash = (kind: 'ok' | 'err', text: string) => {
     if (flashTimerRef.current) {
       clearTimeout(flashTimerRef.current);

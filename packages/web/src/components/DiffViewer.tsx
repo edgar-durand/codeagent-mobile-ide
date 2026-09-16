@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
-import { detectLanguage, reconstructOriginal, type FileFetcher, type GitProvider } from '@codeam/ide-core';
+import {
+  detectLanguage,
+  reconstructOriginal,
+  runCancellable,
+  type FileFetcher,
+  type GitProvider,
+} from '@codeam/ide-core';
 
 interface Props {
   /** Repo path of the file to diff (relative to workspace root). */
@@ -49,44 +55,42 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
     modified: '',
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    setState({ loading: true, error: null, original: '', modified: '' });
-    (async () => {
-      try {
-        const [diffResult, readResult] = await Promise.all([
-          git.diff(path, staged),
-          fetcher.read(path),
-        ]);
-        if (cancelled) return;
-        if (!readResult || readResult.error) {
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        setState({ loading: true, error: null, original: '', modified: '' });
+        try {
+          const [diffResult, readResult] = await Promise.all([
+            git.diff(path, staged),
+            fetcher.read(path),
+          ]);
+          if (isCancelled()) return;
+          if (!readResult || readResult.error) {
+            setState({
+              loading: false,
+              error: readResult?.error ?? 'Could not read working-tree version.',
+              original: '',
+              modified: '',
+            });
+            return;
+          }
+          const modified = readResult.content ?? '';
+          const original = diffResult?.diff
+            ? reconstructOriginal(modified, diffResult.diff)
+            : modified;
+          setState({ loading: false, error: null, original, modified });
+        } catch (e) {
+          if (isCancelled()) return;
           setState({
             loading: false,
-            error: readResult?.error ?? 'Could not read working-tree version.',
+            error: e instanceof Error ? e.message : 'Diff failed.',
             original: '',
             modified: '',
           });
-          return;
         }
-        const modified = readResult.content ?? '';
-        const original = diffResult?.diff
-          ? reconstructOriginal(modified, diffResult.diff)
-          : modified;
-        setState({ loading: false, error: null, original, modified });
-      } catch (e) {
-        if (cancelled) return;
-        setState({
-          loading: false,
-          error: e instanceof Error ? e.message : 'Diff failed.',
-          original: '',
-          modified: '',
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [path, staged, git, fetcher]);
+      }),
+    [path, staged, git, fetcher],
+  );
 
   const language = detectLanguage(path);
 

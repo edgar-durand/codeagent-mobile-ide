@@ -110,3 +110,6 @@ export type { BuildEditorHtmlOptions, BuildDiffHtmlOptions, BuildTerminalHtmlOpt
 
 export { parseBridgeMessage } from './bridge';
 export type { BridgeMessageMap, BridgeMessageType, BridgeMessage } from './bridge';
+
+export { runCancellable } from './async-adapter';
+export type { AsyncAdapterHandle, CancellableEffect, CancellationCheck } from './async-adapter';

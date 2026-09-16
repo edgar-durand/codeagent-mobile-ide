@@ -26,6 +26,26 @@ npm install @codeam/ide-core
   consumer code can avoid duplicating it.
 - **Shared payload types** — `FileReadResult`, `GitStatusEntry`, `SearchHit`,
   `TerminalEvent`. The wire shapes the UI surfaces consume from any adapter.
+- **`runCancellable(effect)`** — runs an async effect and returns the teardown
+  that cancels it, so a component that unmounts (or moves to a different file,
+  query, or provider) mid-fetch never writes the stale result. Framework-
+  agnostic; pair it with the `useAsyncAdapter` hook that `@codeam/ide-web` and
+  `@codeam/ide-native` export.
+
+  ```ts
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        const payload = await provider.list();
+        if (isCancelled()) return;
+        setFiles(payload.files);
+      }),
+    [provider, reloadCount],
+  );
+  ```
+
+  Cancelling only stops the write-back — it doesn't abort work already in
+  flight. Adapters that can truly abort should also take an `AbortSignal`.
 
 See the top-level [`README.md`](../../README.md) for the full architectural
 overview and roadmap.

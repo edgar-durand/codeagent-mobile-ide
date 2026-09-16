@@ -22,6 +22,7 @@ export { SearchPanel } from './components/SearchPanel';
 export { SettingsPanel, CUSTOM_THEMES_STORE_KEY } from './components/SettingsPanel';
 export { useMonacoThemes } from './hooks/useMonacoThemes';
 export { useIconResolver } from './hooks/useIconResolver';
+export { useAsyncAdapter } from './hooks/useAsyncAdapter';
 export {
   ACTIVE_ICON_THEME_STORE_KEY,
   deriveIconThemeBaseUrl,

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type {
-  FileIconRef,
-  FileIconResolver,
-  FileTreeEntry,
-  FileTreeProvider,
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  runCancellable,
+  type FileIconRef,
+  type FileIconResolver,
+  type FileTreeEntry,
+  type FileTreeProvider,
 } from '@codeam/ide-core';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   /** Adapter that yields the workspace's file list. Identity should be
@@ -199,34 +201,30 @@ export function FileTreeSidebar({
   // Mirror the provider in a ref so the load effect can see the
   // latest without making it a dep (provider identity is the
   // consumer's contract responsibility — see the comment in `Props`).
-  const providerRef = useRef(provider);
-  providerRef.current = provider;
+  const { adapterRef: providerRef } = useAsyncAdapter(provider);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQuery(query.trim()), 200);
     return () => clearTimeout(handle);
   }, [query]);
 
-  useEffect(() => {
-    let cancelled = false;
-    providerRef.current
-      .list(debouncedQuery || undefined)
-      .then((payload) => {
-        if (cancelled) return;
-        setFiles(payload.files);
-        setTruncated(payload.truncated);
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        try {
+          const payload = await providerRef.current.list(debouncedQuery || undefined);
+          if (isCancelled()) return;
+          setFiles(payload.files);
+          setTruncated(payload.truncated);
+        } catch {
+          if (isCancelled()) return;
+          setFiles([]);
+          setTruncated(false);
+        }
         setCommittedKey(fetchKey);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setFiles([]);
-        setTruncated(false);
-        setCommittedKey(fetchKey);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedQuery, reloadKey, fetchKey]);
+      }),
+    [debouncedQuery, reloadKey, fetchKey, providerRef],
+  );
 
   const tree = useMemo(() => buildTree(files), [files]);
 

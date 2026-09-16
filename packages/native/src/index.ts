@@ -32,6 +32,7 @@ export {
   type ActiveIconTheme,
 } from './components/MarketplacePanel';
 export { useIconResolver } from './hooks/useIconResolver';
+export { useAsyncAdapter } from './hooks/useAsyncAdapter';
 export { TabsBar } from './components/TabsBar';
 export type { EditorTab } from './components/TabsBar';
 export { InlineEditor } from './components/InlineEditor';

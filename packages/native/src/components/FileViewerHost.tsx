@@ -12,9 +12,15 @@ import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { buildEditorHtml, detectLanguage, parseBridgeMessage } from '@codeam/ide-core';
+import {
+  buildEditorHtml,
+  detectLanguage,
+  parseBridgeMessage,
+  runCancellable,
+} from '@codeam/ide-core';
 import { useFileViewer } from './FileViewerContext';
 import { useIDETheme } from '../theme';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 
 /**
@@ -45,50 +51,45 @@ export function FileViewerHost() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   // Bumped by Retry so the read effect re-runs for the same request/fetcher.
-  const [readAttempt, setReadAttempt] = useState(0);
+  const { reloadCount, reload } = useAsyncAdapter(fetcher);
   const webRef = useRef<WebView>(null);
   const webReadyRef = useRef(false);
   const webGenerationRef = useRef(0);
   const [readyGeneration, setReadyGeneration] = useState<number | undefined>(undefined);
 
   // Reset + fetch when a new request arrives (or the user retries).
-  useEffect(() => {
-    if (!request || !fetcher) return;
-    setContent(null);
-    setOriginalContent(null);
-    setError(null);
-    setSavedAt(null);
-    setLoading(true);
-    webReadyRef.current = false;
-    let cancelled = false;
-    fetcher
-      .read(request.path)
-      .then((result) => {
-        if (cancelled) return;
-        if (!result || result.error) {
-          setError(
-            result?.error ??
-              'Could not read file. Make sure the IDE plugin / CLI is running and on a recent version.',
-          );
-          return;
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        if (!request || !fetcher) return;
+        setContent(null);
+        setOriginalContent(null);
+        setError(null);
+        setSavedAt(null);
+        setLoading(true);
+        webReadyRef.current = false;
+        try {
+          const result = await fetcher.read(request.path);
+          if (isCancelled()) return;
+          if (!result || result.error) {
+            setError(
+              result?.error ??
+                'Could not read file. Make sure the IDE plugin / CLI is running and on a recent version.',
+            );
+            return;
+          }
+          const c = result.content ?? '';
+          setContent(c);
+          setOriginalContent(c);
+        } catch (e) {
+          if (isCancelled()) return;
+          setError(e instanceof Error ? e.message : 'Read failed');
+        } finally {
+          if (!isCancelled()) setLoading(false);
         }
-        const c = result.content ?? '';
-        setContent(c);
-        setOriginalContent(c);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Read failed');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [request, fetcher, readAttempt]);
-
-  const retry = () => setReadAttempt((n) => n + 1);
+      }),
+    [request, fetcher, reloadCount],
+  );
 
   const language = useMemo(() => (request ? detectLanguage(request.path) : 'plaintext'), [request]);
   const html = useMemo(
@@ -255,7 +256,7 @@ export function FileViewerHost() {
               <Ionicons name="alert-circle-outline" size={28} color="#f87171" />
               <Text style={[styles.placeholderText, styles.verdictText]}>{error}</Text>
               <TouchableOpacity
-                onPress={retry}
+                onPress={reload}
                 style={styles.retryBtn}
                 activeOpacity={0.8}
                 accessibilityRole="button"

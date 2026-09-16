@@ -281,6 +281,47 @@ The `SettingsPanel` writes, the `InlineEditor` watches — the editor's theme / 
 
 ---
 
+## `useAsyncAdapter` — fetching through an adapter in an effect
+
+Every panel in this package loads its data the same way, and the hook packages
+that shape up for your own components too:
+
+```tsx
+import { runCancellable } from '@codeam/ide-core';
+import { useAsyncAdapter } from '@codeam/ide-native';
+
+function BranchBadge({ git }: { git: GitProvider }) {
+  const { adapterRef, reloadCount, reload } = useAsyncAdapter(git);
+  const [branch, setBranch] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        const status = await adapterRef.current.status();
+        if (isCancelled()) return;
+        setBranch(status.branch);
+      }),
+    [reloadCount, adapterRef],
+  );
+
+  return (
+    <Pressable onPress={reload}>
+      <Text>{branch ?? '…'}</Text>
+    </Pressable>
+  );
+}
+```
+
+- **`adapterRef`** always holds the newest adapter, so the effect can read it
+  without listing it as a dependency — a consumer that re-allocates its adapter
+  doesn't trigger a refetch storm.
+- **`reloadCount` / `reload`** drive re-fetching on demand: the Retry button
+  after a failure, and the refresh after a commit or a replace.
+
+Identical hook, identical semantics in `@codeam/ide-web`.
+
+---
+
 ## Tips
 
 1. **Memoise adapters with `useMemo`** keyed by workspace id. Allocating a fresh object on every render makes `FileTreeSidebar`'s load effect refire and the file list flickers.

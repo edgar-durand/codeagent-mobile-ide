@@ -9,6 +9,7 @@ import {
   DEFAULT_EDITOR_SETTINGS,
   detectLanguage,
   parseBridgeMessage,
+  runCancellable,
   type EditorSettingsSnapshot,
   type FileFetcher,
   type MonacoTheme,
@@ -17,6 +18,7 @@ import {
 import { CUSTOM_THEMES_STORE_KEY } from './SettingsPanel';
 import { ConflictBanner } from './ConflictBanner';
 import { useIDETheme } from '../theme';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   fetcher: FileFetcher | null;
@@ -64,7 +66,7 @@ export function InlineEditor({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState<number | null>(null);
-  const [readAttempt, setReadAttempt] = useState(0);
+  const { reloadCount, reload } = useAsyncAdapter(fetcher);
   const [settings, setSettings] = useState<EditorSettingsSnapshot>(DEFAULT_EDITOR_SETTINGS);
   const [customThemes, setCustomThemes] = useState<MonacoTheme[]>([]);
   const webRef = useRef<WebView>(null);
@@ -138,37 +140,34 @@ export function InlineEditor({
   }, [settings]);
 
   // Lazy-load file content on first open.
-  useEffect(() => {
-    if (!path || !fetcher) return;
-    if (buffers[path] !== undefined && loadedByFetcherRef.current.get(path) === fetcher) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    webReadyRef.current = false;
-    fetcher
-      .read(path)
-      .then((r) => {
-        if (cancelled) return;
-        if (!r || r.error) {
-          setError(r?.error ?? 'Could not read file.');
-          return;
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        if (!path || !fetcher) return;
+        if (buffers[path] !== undefined && loadedByFetcherRef.current.get(path) === fetcher) return;
+        setLoading(true);
+        setError(null);
+        webReadyRef.current = false;
+        try {
+          const r = await fetcher.read(path);
+          if (isCancelled()) return;
+          if (!r || r.error) {
+            setError(r?.error ?? 'Could not read file.');
+            return;
+          }
+          const content = r.content ?? '';
+          loadedByFetcherRef.current.set(path, fetcher);
+          setBuffers((prev) => ({ ...prev, [path]: content }));
+          setSaved((prev) => ({ ...prev, [path]: content }));
+        } catch (e) {
+          if (isCancelled()) return;
+          setError(e instanceof Error ? e.message : 'Read failed.');
+        } finally {
+          if (!isCancelled()) setLoading(false);
         }
-        const content = r.content ?? '';
-        loadedByFetcherRef.current.set(path, fetcher);
-        setBuffers((prev) => ({ ...prev, [path]: content }));
-        setSaved((prev) => ({ ...prev, [path]: content }));
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Read failed.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, fetcher, buffers, setBuffers, setSaved, readAttempt]);
+      }),
+    [path, fetcher, buffers, setBuffers, setSaved, reloadCount],
+  );
 
   const language = useMemo(() => (path ? detectLanguage(path) : 'plaintext'), [path]);
   const content =
@@ -360,7 +359,7 @@ export function InlineEditor({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Retry loading file"
-              onPress={() => setReadAttempt((attempt) => attempt + 1)}
+              onPress={reload}
               style={[styles.saveBtn, { minHeight: theme.minimumTouchSize }]}
             >
               <Ionicons name="refresh-outline" size={14} color="#fff" />

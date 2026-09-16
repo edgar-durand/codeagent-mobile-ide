@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { detectLanguage } from '@codeam/ide-core';
+import { detectLanguage, runCancellable } from '@codeam/ide-core';
 import { useFileViewer } from './FileViewerContext';
 
 /**
@@ -23,37 +23,34 @@ export function FileViewerHost() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!request || !fetcher) return;
-    setContent(null);
-    setOriginalContent(null);
-    setError(null);
-    setSavedAt(null);
-    setLoading(true);
-    let cancelled = false;
-    fetcher
-      .read(request.path)
-      .then((result) => {
-        if (cancelled) return;
-        if (!result || result.error) {
-          setError(result?.error ?? 'Could not read file.');
-          return;
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        if (!request || !fetcher) return;
+        setContent(null);
+        setOriginalContent(null);
+        setError(null);
+        setSavedAt(null);
+        setLoading(true);
+        try {
+          const result = await fetcher.read(request.path);
+          if (isCancelled()) return;
+          if (!result || result.error) {
+            setError(result?.error ?? 'Could not read file.');
+            return;
+          }
+          const c = result.content ?? '';
+          setContent(c);
+          setOriginalContent(c);
+        } catch (e) {
+          if (isCancelled()) return;
+          setError(e instanceof Error ? e.message : 'Read failed');
+        } finally {
+          if (!isCancelled()) setLoading(false);
         }
-        const c = result.content ?? '';
-        setContent(c);
-        setOriginalContent(c);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : 'Read failed');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [request, fetcher]);
+      }),
+    [request, fetcher],
+  );
 
   const language = useMemo(() => (request ? detectLanguage(request.path) : 'plaintext'), [request]);
   const dirty = content !== originalContent && originalContent !== null;

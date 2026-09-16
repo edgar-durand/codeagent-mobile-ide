@@ -3,8 +3,17 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
-import { buildDiffHtml, detectLanguage, parseBridgeMessage, reconstructOriginal, type FileFetcher, type GitProvider } from '@codeam/ide-core';
+import {
+  buildDiffHtml,
+  detectLanguage,
+  parseBridgeMessage,
+  reconstructOriginal,
+  runCancellable,
+  type FileFetcher,
+  type GitProvider,
+} from '@codeam/ide-core';
 import { useIDETheme } from '../theme';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   path: string;
@@ -34,7 +43,6 @@ interface DiffState {
  */
 export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
   const theme = useIDETheme();
-  const [attempt, setAttempt] = useState(0);
   const generationRef = useRef(0);
   const [readyGeneration, setReadyGeneration] = useState<number | undefined>(undefined);
   const handleGenerationChange = useCallback((generation: number) => {
@@ -47,58 +55,54 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
     original: '',
     modified: '',
   });
-  const gitRef = useRef(git);
-  gitRef.current = git;
-  const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+  const { adapterRef: gitRef, reloadCount, reload } = useAsyncAdapter(git);
+  const { adapterRef: fetcherRef } = useAsyncAdapter(fetcher);
 
-  useEffect(() => {
-    let cancelled = false;
-    setState({ loading: true, error: null, original: '', modified: '' });
-    (async () => {
-      try {
-        const [diffResult, readResult] = await Promise.all([
-          gitRef.current.diff(path, staged),
-          fetcherRef.current.read(path),
-        ]);
-        if (cancelled) return;
-        if (!readResult || readResult.error) {
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        setState({ loading: true, error: null, original: '', modified: '' });
+        try {
+          const [diffResult, readResult] = await Promise.all([
+            gitRef.current.diff(path, staged),
+            fetcherRef.current.read(path),
+          ]);
+          if (isCancelled()) return;
+          if (!readResult || readResult.error) {
+            setState({
+              loading: false,
+              error: readResult?.error ?? 'Could not read working-tree version.',
+              original: '',
+              modified: '',
+            });
+            return;
+          }
+          if (!diffResult) {
+            setState({
+              loading: false,
+              error: 'The source-control provider did not return a diff for this file.',
+              original: '',
+              modified: '',
+            });
+            return;
+          }
+          const modified = readResult.content ?? '';
+          const original = diffResult.diff
+            ? reconstructOriginal(modified, diffResult.diff)
+            : modified;
+          setState({ loading: false, error: null, original, modified });
+        } catch (e) {
+          if (isCancelled()) return;
           setState({
             loading: false,
-            error: readResult?.error ?? 'Could not read working-tree version.',
+            error: e instanceof Error ? e.message : 'Diff failed.',
             original: '',
             modified: '',
           });
-          return;
         }
-        if (!diffResult) {
-          setState({
-            loading: false,
-            error: 'The source-control provider did not return a diff for this file.',
-            original: '',
-            modified: '',
-          });
-          return;
-        }
-        const modified = readResult.content ?? '';
-        const original = diffResult.diff
-          ? reconstructOriginal(modified, diffResult.diff)
-          : modified;
-        setState({ loading: false, error: null, original, modified });
-      } catch (e) {
-        if (cancelled) return;
-        setState({
-          loading: false,
-          error: e instanceof Error ? e.message : 'Diff failed.',
-          original: '',
-          modified: '',
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [path, staged, attempt]);
+      }),
+    [path, staged, reloadCount, gitRef, fetcherRef],
+  );
 
   const html = useMemo(() => {
     if (state.loading) return null;
@@ -151,7 +155,7 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Retry loading diff"
-              onPress={() => setAttempt((value) => value + 1)}
+              onPress={reload}
               style={[styles.retryBtn, { minHeight: theme.minimumTouchSize }]}
             >
               <Ionicons name="refresh-outline" size={14} color="#fff" />

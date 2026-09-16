@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   buildIconResolver,
   parseJsonc,
+  runCancellable,
   type FileIconResolver,
   type SettingsStore,
   type VSCodeIconTheme,
@@ -62,32 +63,29 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
   }, [store]);
 
   // Fetch + parse the theme JSON whenever the pointer changes.
-  useEffect(() => {
-    if (!active) {
-      setResolver(null);
-      return;
-    }
-    let cancelled = false;
-    void fetch(active.url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then((text) => {
-        if (cancelled) return;
-        const theme = parseJsonc<VSCodeIconTheme>(text);
-        setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
-      })
-      .catch(() => {
-        // Silent — return null resolver so the tree falls back
-        // to default glyphs. The marketplace panel will surface
-        // any error on re-install.
-        if (!cancelled) setResolver(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [active]);
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        if (!active) {
+          setResolver(null);
+          return;
+        }
+        try {
+          const res = await fetch(active.url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          if (isCancelled()) return;
+          const theme = parseJsonc<VSCodeIconTheme>(text);
+          setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
+        } catch {
+          // Silent — return null resolver so the tree falls back
+          // to default glyphs. The marketplace panel will surface
+          // any error on re-install.
+          if (!isCancelled()) setResolver(null);
+        }
+      }),
+    [active],
+  );
 
   return resolver;
 }

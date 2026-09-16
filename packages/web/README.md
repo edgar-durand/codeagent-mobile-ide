@@ -313,6 +313,43 @@ Pass it to the `SettingsPanel` and the `InlineEditor` (so settings changes apply
 
 ---
 
+## `useAsyncAdapter` — fetching through an adapter in an effect
+
+Every panel in this package loads its data the same way, and the hook packages
+that shape up for your own components too:
+
+```tsx
+import { runCancellable } from '@codeam/ide-core';
+import { useAsyncAdapter } from '@codeam/ide-web';
+
+function BranchBadge({ git }: { git: GitProvider }) {
+  const { adapterRef, reloadCount, reload } = useAsyncAdapter(git);
+  const [branch, setBranch] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        const status = await adapterRef.current.status();
+        if (isCancelled()) return;
+        setBranch(status.branch);
+      }),
+    [reloadCount, adapterRef],
+  );
+
+  return <button onClick={reload}>{branch ?? '…'}</button>;
+}
+```
+
+- **`adapterRef`** always holds the newest adapter, so the effect can read it
+  without listing it as a dependency — a consumer that re-allocates its adapter
+  doesn't trigger a refetch storm.
+- **`reloadCount` / `reload`** drive re-fetching on demand: the Retry button
+  after a failure, and the refresh after a commit or a replace.
+
+Identical hook, identical semantics in `@codeam/ide-native`.
+
+---
+
 ## Tips
 
 1. **Memoise adapter instances.** The library keys its load effects off adapter identity. A fresh `{ list: () => fetch(...) }` per render causes refetch loops + flicker.

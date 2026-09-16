@@ -10,13 +10,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SvgUri } from 'react-native-svg';
-import type {
-  FileIconRef,
-  FileIconResolver,
-  FileTreeEntry,
-  FileTreeProvider,
+import {
+  runCancellable,
+  type FileIconRef,
+  type FileIconResolver,
+  type FileTreeEntry,
+  type FileTreeProvider,
 } from '@codeam/ide-core';
 import { useIDETheme } from '../theme';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   provider: FileTreeProvider;
@@ -133,8 +135,8 @@ export function FileTreeSidebar({
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [retryCounter, setRetryCounter] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const { reloadCount, reload } = useAsyncAdapter(provider);
   const previousProvider = useRef(provider);
 
   useEffect(() => {
@@ -142,36 +144,33 @@ export function FileTreeSidebar({
     return () => clearTimeout(handle);
   }, [query]);
 
-  useEffect(() => {
-    const providerChanged = previousProvider.current !== provider;
-    previousProvider.current = provider;
-    if (providerChanged) {
-      setFiles([]);
-      setTruncated(false);
-      setExpanded(new Set());
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    provider
-      .list(debouncedQuery || undefined)
-      .then((payload) => {
-        if (cancelled) return;
-        setFiles(payload.files);
-        setTruncated(payload.truncated);
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        const providerChanged = previousProvider.current !== provider;
+        previousProvider.current = provider;
+        if (providerChanged) {
+          setFiles([]);
+          setTruncated(false);
+          setExpanded(new Set());
+        }
+        setLoading(true);
         setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : 'Unable to load workspace files.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [provider, debouncedQuery, reloadKey, retryCounter]);
+        try {
+          const payload = await provider.list(debouncedQuery || undefined);
+          if (isCancelled()) return;
+          setFiles(payload.files);
+          setTruncated(payload.truncated);
+          setError(null);
+        } catch (cause: unknown) {
+          if (isCancelled()) return;
+          setError(cause instanceof Error ? cause.message : 'Unable to load workspace files.');
+        } finally {
+          if (!isCancelled()) setLoading(false);
+        }
+      }),
+    [provider, debouncedQuery, reloadKey, reloadCount],
+  );
 
   const rows = useMemo<FlatRow[]>(() => {
     if (debouncedQuery.length > 0) {
@@ -228,7 +227,7 @@ export function FileTreeSidebar({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Retry loading workspace files"
-            onPress={() => setRetryCounter((value) => value + 1)}
+            onPress={reload}
             style={[styles.retryButton, { minHeight: theme.minimumTouchSize }]}
           >
             <Text style={styles.retryText}>Retry</Text>

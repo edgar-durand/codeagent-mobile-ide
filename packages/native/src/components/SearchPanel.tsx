@@ -10,8 +10,15 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { SearchHit, SearchOptions, SearchProvider, SearchResult } from '@codeam/ide-core';
+import {
+  runCancellable,
+  type SearchHit,
+  type SearchOptions,
+  type SearchProvider,
+  type SearchResult,
+} from '@codeam/ide-core';
 import { useIDETheme } from '../theme';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   provider: SearchProvider;
@@ -59,7 +66,7 @@ export function SearchPanel({ provider, onOpen, initialQuery, confirmReplace }: 
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [retryCounter, setRetryCounter] = useState(0);
+  const { reloadCount, reload } = useAsyncAdapter(provider);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replacement, setReplacement] = useState('');
@@ -85,68 +92,63 @@ export function SearchPanel({ provider, onOpen, initialQuery, confirmReplace }: 
     return () => clearTimeout(id);
   }, [query]);
 
-  useEffect(() => {
-    if (previousProvider.current !== provider) {
-      previousProvider.current = provider;
-      setResult(null);
-      setCollapsed(new Set());
-    }
-    if (!debouncedQuery) {
-      setResult(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const options: SearchOptions = {
+  useEffect(
+    () =>
+      runCancellable(async (isCancelled) => {
+        if (previousProvider.current !== provider) {
+          previousProvider.current = provider;
+          setResult(null);
+          setCollapsed(new Set());
+        }
+        if (!debouncedQuery) {
+          setResult(null);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        setLoading(true);
+        setError(null);
+        const options: SearchOptions = {
+          caseSensitive,
+          wholeWord,
+          regex,
+          include: include
+            ? include
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : undefined,
+          exclude: exclude
+            ? exclude
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : undefined,
+        };
+        try {
+          const r = await provider.search(debouncedQuery, options);
+          if (isCancelled()) return;
+          setResult(r);
+          setError(null);
+        } catch (cause: unknown) {
+          if (isCancelled()) return;
+          setError(cause instanceof Error ? cause.message : 'Search failed.');
+        } finally {
+          if (!isCancelled()) setLoading(false);
+        }
+      }),
+    [
+      provider,
+      debouncedQuery,
       caseSensitive,
       wholeWord,
       regex,
-      include: include
-        ? include
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : undefined,
-      exclude: exclude
-        ? exclude
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : undefined,
-    };
-    provider
-      .search(debouncedQuery, options)
-      .then((r) => {
-        if (!cancelled) {
-          setResult(r);
-          setError(null);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : 'Search failed.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    provider,
-    debouncedQuery,
-    caseSensitive,
-    wholeWord,
-    regex,
-    include,
-    exclude,
-    fetchKey,
-    retryCounter,
-  ]);
+      include,
+      exclude,
+      fetchKey,
+      reloadCount,
+    ],
+  );
 
   const groups = useMemo(() => groupByFile(result?.hits ?? []), [result]);
 
@@ -202,7 +204,7 @@ export function SearchPanel({ provider, onOpen, initialQuery, confirmReplace }: 
         `Replaced ${r.replaced} in ${r.filesChanged} file${r.filesChanged === 1 ? '' : 's'}.`,
       );
       // Re-run search so the result list reflects post-replace state.
-      setRetryCounter((value) => value + 1);
+      reload();
     } catch (e) {
       setReplaceStatus(e instanceof Error ? e.message : 'Replace failed');
     } finally {
@@ -352,7 +354,7 @@ export function SearchPanel({ provider, onOpen, initialQuery, confirmReplace }: 
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Retry search"
-            onPress={() => setRetryCounter((value) => value + 1)}
+            onPress={reload}
             style={[styles.retryButton, { minHeight: theme.minimumTouchSize }]}
           >
             <Text style={styles.retryText}>Retry</Text>

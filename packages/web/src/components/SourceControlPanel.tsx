@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type {
-  GitLogEntry,
-  GitProvider,
-  GitStatusEntry,
-  GitStatusPayload,
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  runCancellable,
+  type GitLogEntry,
+  type GitProvider,
+  type GitStatusEntry,
+  type GitStatusPayload,
 } from '@codeam/ide-core';
+import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
 interface Props {
   provider: GitProvider;
@@ -97,43 +99,39 @@ function timeAgo(ts: number): string {
 export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Props) {
   const [status, setStatus] = useState<GitStatusPayload | null>(null);
   const [log, setLog] = useState<GitLogEntry[] | null>(null);
-  const [reloadCounter, setReloadCounter] = useState(0);
   const [busy, setBusy] = useState<'commit' | 'push' | 'pull' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [changesOpen, setChangesOpen] = useState(true);
   const [graphOpen, setGraphOpen] = useState(true);
-  const providerRef = useRef(provider);
-  providerRef.current = provider;
+  const { adapterRef: providerRef, reloadCount, reload } = useAsyncAdapter(provider);
   const supportsLog = typeof provider.log === 'function';
 
-  useEffect(() => {
-    let cancelled = false;
-    providerRef.current
-      .status()
-      .then((payload) => {
-        if (!cancelled) setStatus(payload);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus(null);
-      });
-    if (providerRef.current.log) {
-      providerRef.current
-        .log(30)
-        .then((entries) => {
-          if (!cancelled) setLog(entries);
-        })
-        .catch(() => {
-          if (!cancelled) setLog([]);
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey, reloadCounter]);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        const git = providerRef.current;
+        void git
+          .status()
+          .then((payload) => {
+            if (!isCancelled()) setStatus(payload);
+          })
+          .catch(() => {
+            if (!isCancelled()) setStatus(null);
+          });
+        void git
+          .log?.(30)
+          .then((entries) => {
+            if (!isCancelled()) setLog(entries);
+          })
+          .catch(() => {
+            if (!isCancelled()) setLog([]);
+          });
+      }),
+    [reloadKey, reloadCount, providerRef],
+  );
 
-  const reload = () => setReloadCounter((c) => c + 1);
   const flash = (kind: 'ok' | 'err', text: string) => {
     if (kind === 'ok') {
       setOk(text);
