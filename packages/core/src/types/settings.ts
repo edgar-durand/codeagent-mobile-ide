@@ -46,3 +46,9 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
   minimap: false,
   lineNumbers: true,
 };
+
+/** Storage key for user-imported color themes (MonacoTheme[]). */
+export const CUSTOM_THEMES_STORE_KEY = 'editor.customThemes';
+
+/** Storage key for the active icon theme pointer (ActiveIconTheme | null). */
+export const ICON_THEME_STORE_KEY = 'editor.iconTheme';

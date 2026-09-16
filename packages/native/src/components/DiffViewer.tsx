@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import type { WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
-import { detectLanguage, type FileFetcher, type GitProvider } from '@codeam/ide-core';
+import { buildDiffHtml, detectLanguage, parseBridgeMessage, reconstructOriginal, type FileFetcher, type GitProvider } from '@codeam/ide-core';
 import { useIDETheme } from '../theme';
 
 interface Props {
@@ -21,97 +21,6 @@ interface DiffState {
   modified: string;
 }
 
-/**
- * Reverse a unified-diff to reconstruct the ORIGINAL buffer from
- * the MODIFIED (working tree) buffer + diff text. Shared logic
- * with the web DiffViewer — kept inline here so the native bundle
- * doesn't pull in cross-platform helper modules unnecessarily.
- */
-function reconstructOriginal(modified: string, diff: string): string {
-  const modifiedLines = modified.split('\n');
-  const original: string[] = [];
-  let cursor = 0;
-  const lines = diff.split('\n');
-  let i = 0;
-  while (i < lines.length && !(lines[i] ?? '').startsWith('@@')) i++;
-  while (i < lines.length) {
-    const header = lines[i] ?? '';
-    const match = header.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
-    if (!match) {
-      i++;
-      continue;
-    }
-    const newStart = parseInt(match[3] ?? '1', 10) - 1;
-    while (cursor < newStart && cursor < modifiedLines.length) {
-      original.push(modifiedLines[cursor] ?? '');
-      cursor++;
-    }
-    i++;
-    while (i < lines.length && !(lines[i] ?? '').startsWith('@@')) {
-      const raw = lines[i] ?? '';
-      i++;
-      if (raw.startsWith('\\')) continue;
-      const prefix = raw[0];
-      const body = raw.slice(1);
-      if (prefix === ' ') {
-        original.push(body);
-        cursor++;
-      } else if (prefix === '-') {
-        original.push(body);
-      } else if (prefix === '+') {
-        cursor++;
-      } else {
-        original.push(raw);
-        cursor++;
-      }
-    }
-  }
-  while (cursor < modifiedLines.length) {
-    original.push(modifiedLines[cursor] ?? '');
-    cursor++;
-  }
-  return original.join('\n');
-}
-
-function buildDiffHtml(original: string, modified: string, language: string): string {
-  const o = JSON.stringify(original);
-  const m = JSON.stringify(modified);
-  const lang = JSON.stringify(language);
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<style>
-  html, body, #editor { margin:0; padding:0; height:100%; background:#0d1117; }
-  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-</style>
-</head>
-<body>
-<div id="editor"></div>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52/min/vs/loader.js"></script>
-<script>
-  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52/min/vs' } });
-  require(['vs/editor/editor.main'], function () {
-    const originalModel = monaco.editor.createModel(${o}, ${lang});
-    const modifiedModel = monaco.editor.createModel(${m}, ${lang});
-    const diffEditor = monaco.editor.createDiffEditor(document.getElementById('editor'), {
-      theme: 'vs-dark',
-      automaticLayout: true,
-      readOnly: true,
-      renderSideBySide: true,
-      minimap: { enabled: false },
-      wordWrap: 'on',
-      fontSize: 12,
-      scrollBeyondLastLine: false,
-    });
-    diffEditor.setModel({ original: originalModel, modified: modifiedModel });
-    window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
-  });
-</script>
-</body>
-</html>`;
-}
 
 /**
  * React Native side-by-side diff viewer. Same UX as the web
@@ -193,7 +102,11 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
 
   const html = useMemo(() => {
     if (state.loading) return null;
-    return buildDiffHtml(state.original, state.modified, detectLanguage(path));
+    return buildDiffHtml({
+      original: state.original,
+      modified: state.modified,
+      language: detectLanguage(path),
+    });
   }, [state.loading, state.original, state.modified, path]);
 
   return (
@@ -261,12 +174,8 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
             setSupportMultipleWindows={false}
             automaticallyAdjustContentInsets={false}
             onMessage={(event: WebViewMessageEvent) => {
-              try {
-                const message = JSON.parse(event.nativeEvent.data) as { type?: unknown };
-                if (message.type === 'ready') setReadyGeneration(generationRef.current);
-              } catch {
-                // Ignore messages outside the small diff bridge protocol.
-              }
+              const message = parseBridgeMessage(event.nativeEvent.data);
+              if (message?.type === 'ready') setReadyGeneration(generationRef.current);
             }}
           />
         ) : null}

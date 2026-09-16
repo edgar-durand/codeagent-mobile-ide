@@ -36,8 +36,11 @@ export async function downloadMarketplaceJson<T>(
     if (!validate(value)) throw new Error('Downloaded file is not a supported theme.');
     return value;
   } catch (error) {
+    if (signal?.aborted) {
+      throw new Error('Download cancelled.');
+    }
     if (controller.signal.aborted) {
-      throw new Error(signal?.aborted ? 'Download cancelled.' : 'Download timed out.');
+      throw new Error('Download timed out.');
     }
     throw error;
   } finally {

@@ -46,7 +46,11 @@ export type {
   SettingsStore,
   EditorSettingsSnapshot,
 } from './types/settings';
-export { DEFAULT_EDITOR_SETTINGS } from './types/settings';
+export {
+  DEFAULT_EDITOR_SETTINGS,
+  CUSTOM_THEMES_STORE_KEY,
+  ICON_THEME_STORE_KEY,
+} from './types/settings';
 
 export type { IdeAdapters } from './types/adapters';
 
@@ -93,3 +97,16 @@ export {
   detectConflicts,
   hasConflictMarkers,
 } from './utils/conflicts';
+
+export { reconstructOriginal } from './utils/reconstructOriginal';
+
+export {
+  MONACO_CDN_BASE,
+  buildEditorHtml,
+  buildDiffHtml,
+  buildTerminalHtml,
+} from './monaco-html';
+export type { BuildEditorHtmlOptions, BuildDiffHtmlOptions, BuildTerminalHtmlOptions } from './monaco-html';
+
+export { parseBridgeMessage } from './bridge';
+export type { BridgeMessageMap, BridgeMessageType, BridgeMessage } from './bridge';

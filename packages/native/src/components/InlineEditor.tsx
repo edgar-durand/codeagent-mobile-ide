@@ -4,9 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
 import {
+  buildEditorHtml,
   BUNDLED_CUSTOM_THEMES,
   DEFAULT_EDITOR_SETTINGS,
   detectLanguage,
+  parseBridgeMessage,
   type EditorSettingsSnapshot,
   type FileFetcher,
   type MonacoTheme,
@@ -36,104 +38,6 @@ interface Props {
   onAfterSave?: (path: string) => void;
 }
 
-function buildEditorHtml(
-  initial: string,
-  language: string,
-  settings: EditorSettingsSnapshot,
-  readOnly: boolean,
-) {
-  const value = JSON.stringify(initial);
-  const lang = JSON.stringify(language);
-  // Inline the bundled custom themes (github-dark, github-light)
-  // into the page so `monaco.editor.setTheme(name)` resolves them
-  // without a follow-up bridge call. User-imported themes arrive
-  // later via the `bridgeRegisterCustomThemes` path defined below.
-  const bundledThemes = JSON.stringify(
-    BUNDLED_CUSTOM_THEMES.map((t) => ({
-      name: t.name,
-      base: t.base,
-      inherit: t.inherit,
-      rules: t.rules,
-      colors: t.colors,
-    })),
-  );
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<style>
-  html, body, #editor { margin:0; padding:0; height:100%; background:#0d1117; }
-  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-</style>
-</head>
-<body>
-<div id="editor"></div>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52/min/vs/loader.js"></script>
-<script>
-  const post = (m) => window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(m));
-  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52/min/vs' } });
-  require(['vs/editor/editor.main'], function () {
-    try {
-      // Register the bundled custom themes (github-*) before the
-      // editor instantiation so the initial theme setting can be
-      // resolved without a missing-theme warning.
-      const BUNDLED = ${bundledThemes};
-      for (const t of BUNDLED) {
-        try {
-          monaco.editor.defineTheme(t.name, {
-            base: t.base, inherit: t.inherit, rules: t.rules, colors: t.colors,
-          });
-        } catch (e) { /* malformed bundled theme — should be unreachable */ }
-      }
-      const editor = monaco.editor.create(document.getElementById('editor'), {
-        value: ${value},
-        language: ${lang},
-        theme: ${JSON.stringify(settings.theme)},
-        minimap: { enabled: ${settings.minimap ? 'true' : 'false'} },
-        automaticLayout: true,
-        wordWrap: ${settings.wordWrap ? "'on'" : "'off'"},
-        scrollBeyondLastLine: false,
-        fontSize: ${settings.fontSize},
-        tabSize: ${settings.tabSize},
-        lineNumbers: ${settings.lineNumbers ? "'on'" : "'off'"},
-        bracketPairColorization: { enabled: true },
-        smoothScrolling: true,
-        readOnly: ${readOnly ? 'true' : 'false'},
-      });
-      window.__editor = editor;
-      window.bridgeSetValue = (v) => editor.setValue(v);
-      window.bridgeSetOptions = (o) => {
-        try { editor.updateOptions(o); } catch (e) {}
-        if (o && o.theme) monaco.editor.setTheme(o.theme);
-      };
-      // Called from RN to register user-imported VS Code themes.
-      // Each entry is the shape monaco.editor.defineTheme expects
-      // plus a name field. Safe to call repeatedly.
-      window.bridgeRegisterCustomThemes = (themes) => {
-        if (!Array.isArray(themes)) return;
-        for (const t of themes) {
-          if (!t || typeof t.name !== 'string') continue;
-          try {
-            monaco.editor.defineTheme(t.name, {
-              base: t.base, inherit: t.inherit, rules: t.rules, colors: t.colors,
-            });
-          } catch (e) { /* skip — malformed theme */ }
-        }
-      };
-      editor.onDidChangeModelContent(() => {
-        post({ type: 'change', value: editor.getValue() });
-      });
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => post({ type: 'save' }));
-      post({ type: 'ready' });
-    } catch (e) {
-      post({ type: 'error', value: String((e && e.message) || e) });
-    }
-  });
-</script>
-</body>
-</html>`;
-}
 
 function isSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
   return typeof v === 'object' && v !== null;
@@ -302,37 +206,36 @@ export function InlineEditor({
   const html = useMemo(
     () =>
       content !== undefined
-        ? buildEditorHtml(content, language, settings, !fetcher?.canWrite)
+        ? buildEditorHtml({
+            initialContent: content,
+            language,
+            settings,
+            readOnly: !fetcher?.canWrite,
+            bundledThemes: BUNDLED_CUSTOM_THEMES,
+          })
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [path, language, content !== undefined, fetcher?.canWrite],
   );
 
   const onMessage = (e: WebViewMessageEvent) => {
-    try {
-      const msg = JSON.parse(e.nativeEvent.data);
-      if (msg.type === 'change' && path) {
-        setBuffers((prev) => ({ ...prev, [path]: typeof msg.value === 'string' ? msg.value : '' }));
-      } else if (msg.type === 'save') {
-        void onSave();
-      } else if (msg.type === 'ready') {
-        webReadyRef.current = true;
-        setReadyGeneration(webGenerationRef.current);
-        // Flush any user-imported themes loaded BEFORE the WebView
-        // signalled ready (common path: settings store resolves
-        // before the WebView's `require()` finishes downloading
-        // the Monaco bundle from jsDelivr).
-        if (customThemes.length > 0 && webRef.current) {
-          const payload = JSON.stringify(customThemes);
-          webRef.current.injectJavaScript(
-            `try { window.bridgeRegisterCustomThemes(${payload}); } catch (e) {} true;`,
-          );
-        }
-      } else if (msg.type === 'error') {
-        setError(typeof msg.value === 'string' ? msg.value : 'Editor error');
+    const msg = parseBridgeMessage(e.nativeEvent.data);
+    if (!msg) return;
+    if (msg.type === 'change' && path) {
+      setBuffers((prev) => ({ ...prev, [path]: typeof msg.value === 'string' ? msg.value : '' }));
+    } else if (msg.type === 'save') {
+      void onSave();
+    } else if (msg.type === 'ready') {
+      webReadyRef.current = true;
+      setReadyGeneration(webGenerationRef.current);
+      if (customThemes.length > 0 && webRef.current) {
+        const payload = JSON.stringify(customThemes);
+        webRef.current.injectJavaScript(
+          `try { window.bridgeRegisterCustomThemes(${payload}); } catch (e) {} true;`,
+        );
       }
-    } catch {
-      /* ignore */
+    } else if (msg.type === 'error') {
+      setError(typeof msg.value === 'string' ? msg.value : 'Editor error');
     }
   };
 

@@ -12,68 +12,10 @@ import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { detectLanguage } from '@codeam/ide-core';
+import { buildEditorHtml, detectLanguage, parseBridgeMessage } from '@codeam/ide-core';
 import { useFileViewer } from './FileViewerContext';
 import { useIDETheme } from '../theme';
 
-/**
- * Build the HTML that hosts a Monaco editor inside a WebView. Monaco
- * loads from a CDN — that's the simplest cross-platform delivery
- * because bundling 5+ MB of editor sources into the RN bundle is
- * prohibitive on cold-start. Consumers who need offline operation can
- * later self-host the assets and override this loader via a prop.
- */
-function buildEditorHtml(initialContent: string, language: string, readOnly: boolean): string {
-  const escaped = JSON.stringify(initialContent);
-  const lang = JSON.stringify(language);
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<style>
-  html, body, #editor { margin:0; padding:0; height:100%; background:#0d1117; }
-  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-</style>
-</head>
-<body>
-<div id="editor"></div>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52/min/vs/loader.js"></script>
-<script>
-  const post = (m) => window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(m));
-  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52/min/vs' } });
-  require(['vs/editor/editor.main'], function () {
-    try {
-      const editor = monaco.editor.create(document.getElementById('editor'), {
-        value: ${escaped},
-        language: ${lang},
-        theme: 'vs-dark',
-        minimap: { enabled: false },
-        automaticLayout: true,
-        wordWrap: 'on',
-        scrollBeyondLastLine: false,
-        fontSize: 13,
-        tabSize: 2,
-        bracketPairColorization: { enabled: true },
-        smoothScrolling: true,
-        readOnly: ${readOnly ? 'true' : 'false'},
-      });
-      window.__editor = editor;
-      window.bridgeSetValue = (v) => editor.setValue(v);
-      window.bridgeSetReadOnly = (ro) => editor.updateOptions({ readOnly: !!ro });
-      editor.onDidChangeModelContent(() => {
-        post({ type: 'change', value: editor.getValue() });
-      });
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => post({ type: 'save' }));
-      post({ type: 'ready' });
-    } catch (e) {
-      post({ type: 'error', value: String((e && e.message) || e) });
-    }
-  });
-</script>
-</body>
-</html>`;
-}
 
 /**
  * Renders the file viewer modal when the {@link useFileViewer} context has
@@ -152,7 +94,11 @@ export function FileViewerHost() {
   const html = useMemo(
     () =>
       content !== null
-        ? buildEditorHtml(content, language, request?.op === 'Read' || !fetcher?.canWrite)
+        ? buildEditorHtml({
+            initialContent: content,
+            language,
+            readOnly: request?.op === 'Read' || !fetcher?.canWrite,
+          })
         : null,
     // Build the WebView HTML once per file open — Monaco does its own DOM
     // diff for subsequent edits, no need to re-render the whole shell.
@@ -161,21 +107,14 @@ export function FileViewerHost() {
   );
 
   const onMessage = (event: WebViewMessageEvent) => {
-    try {
-      const msg = JSON.parse(event.nativeEvent.data) as
-        | { type: 'change'; value: string }
-        | { type: 'save' }
-        | { type: 'ready' }
-        | { type: 'error'; value: string };
-      if (msg.type === 'change') setContent(msg.value);
-      else if (msg.type === 'save') void onSave();
-      else if (msg.type === 'ready') {
-        webReadyRef.current = true;
-        setReadyGeneration(webGenerationRef.current);
-      } else if (msg.type === 'error') setError(msg.value);
-    } catch {
-      /* malformed bridge message — ignore */
-    }
+    const msg = parseBridgeMessage(event.nativeEvent.data);
+    if (!msg) return;
+    if (msg.type === 'change') setContent(msg.value);
+    else if (msg.type === 'save') void onSave();
+    else if (msg.type === 'ready') {
+      webReadyRef.current = true;
+      setReadyGeneration(webGenerationRef.current);
+    } else if (msg.type === 'error') setError(msg.value);
   };
 
   const dirty = content !== originalContent && originalContent !== null;

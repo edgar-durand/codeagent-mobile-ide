@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
+  CUSTOM_THEMES_STORE_KEY,
   DEFAULT_EDITOR_SETTINGS,
   DEFAULT_THEME_CHOICES,
   MARKETPLACE_THEMES,
@@ -11,14 +12,6 @@ import {
   type SettingsStore,
   type VSCodeColorTheme,
 } from '@codeam/ide-core';
-
-/**
- * Storage key for user-imported themes. Read by `useMonacoThemes`
- * on InlineEditor mount so any imported theme survives reloads.
- * Stored as `MonacoTheme[]` — VS Code-format imports are converted
- * to Monaco shape at import time, not at register time.
- */
-export const CUSTOM_THEMES_STORE_KEY = 'editor.customThemes';
 
 interface Props {
   /** Persistence layer. When omitted, the panel renders in
@@ -398,3 +391,5 @@ function Toggle({
     </button>
   );
 }
+
+export { CUSTOM_THEMES_STORE_KEY };

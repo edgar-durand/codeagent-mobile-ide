@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { detectLanguage } from '@codeam/ide-core';
 import { useFileViewer } from './FileViewerContext';
@@ -10,9 +10,9 @@ import { useFileViewer } from './FileViewerContext';
  * loader is dynamic-import'd lazily — the package doesn't pull Monaco into
  * the consumer's main bundle until the editor actually opens.
  *
- * Styling: this v0.1.0 ships with inline styles (no Tailwind, no CSS files
- * to import). Themes / colour customisation are tracked in the Phase 2
- * settings panel work — see `docs/roadmap/phase-2-features.md`.
+ * Styling: this component uses Tailwind CSS classes matching the rest of
+ * the @codeam/ide-web package. Themes / colour customisation are tracked
+ * in the Phase 2 settings panel work — see `docs/roadmap/phase-2-features.md`.
  */
 export function FileViewerHost() {
   const { request, fetcher, close } = useFileViewer();
@@ -87,34 +87,35 @@ export function FileViewerHost() {
   if (!request) return null;
 
   return (
-    <div style={styles.backdrop} role="dialog" aria-modal>
-      <div style={styles.container}>
-        <div style={styles.header}>
-          <div style={styles.headerLeft}>
-            <span style={{ ...styles.fileName }}>{request.path}</span>
-            {dirty && <span style={styles.dirty}>●</span>}
+    <div className="fixed inset-0 bg-black/50 z-[9999] flex items-stretch justify-stretch" role="dialog" aria-modal>
+      <div className="flex-1 flex flex-col bg-[#0d1117] text-gray-200 font-['-apple-system',BlinkMacSystemFont,'Segoe_UI',Roboto,sans-serif]">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#1f2433] bg-[#161b22]">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[13px] overflow-hidden text-ellipsis whitespace-nowrap">{request.path}</span>
+            {dirty && <span className="text-amber-400 text-lg ml-1">●</span>}
           </div>
-          <div style={styles.headerRight}>
-            {savedAt && !dirty && <span style={styles.savedHint}>Saved</span>}
+          <div className="flex items-center gap-2.5">
+            {savedAt && !dirty && <span className="text-emerald-400 text-[11px]">Saved</span>}
             <button
               type="button"
               onClick={() => void onSave()}
               disabled={!canSave}
-              style={{ ...styles.saveBtn, opacity: canSave ? 1 : 0.5 }}
+              className="bg-violet-400 text-white border-0 rounded-lg px-3 py-1.5 text-xs font-semibold cursor-pointer"
+              style={{ opacity: canSave ? 1 : 0.5 }}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
-            <button type="button" onClick={close} style={styles.closeBtn} aria-label="Close">
+            <button type="button" onClick={close} className="bg-transparent text-[#bcb6cc] border-0 text-lg cursor-pointer p-1" aria-label="Close">
               ✕
             </button>
           </div>
         </div>
-        {error && <div style={styles.errorBar}>{error}</div>}
-        <div style={styles.body}>
+        {error && <div className="bg-rose-500/20 border-b border-rose-500/40 px-3 py-2 text-rose-200 text-[11px]">{error}</div>}
+        <div className="flex-1 min-h-0">
           {loading ? (
-            <div style={styles.placeholder}>Fetching {request.path}…</div>
+            <div className="h-full flex items-center justify-center text-[#bcb6cc] text-xs">Fetching {request.path}…</div>
           ) : !fetcher ? (
-            <div style={styles.placeholder}>
+            <div className="h-full flex items-center justify-center text-[#bcb6cc] text-xs">
               No active session. Pair an IDE plugin or CLI first.
             </div>
           ) : (
@@ -139,7 +140,7 @@ export function FileViewerHost() {
             />
           )}
         </div>
-        <div style={styles.footer}>
+        <div className="flex justify-between px-3 py-2 bg-[#161b22] border-t border-[#1f2433] text-[#8b8794] text-[11px]">
           <span>{fetcher ? 'Connected · powered by Monaco' : 'Read-only'}</span>
           <span>{language.toUpperCase()}</span>
         </div>
@@ -147,84 +148,3 @@ export function FileViewerHost() {
     </div>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  backdrop: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.5)',
-    zIndex: 9999,
-    display: 'flex',
-    alignItems: 'stretch',
-    justifyContent: 'stretch',
-  },
-  container: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    background: '#0d1117',
-    color: '#e5e7eb',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 12px',
-    borderBottom: '1px solid #1f2433',
-    background: '#161b22',
-  },
-  headerLeft: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 10 },
-  fileName: {
-    fontSize: 13,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  dirty: { color: '#fbbf24', fontSize: 18, marginLeft: 4 },
-  savedHint: { color: '#34d399', fontSize: 11 },
-  saveBtn: {
-    background: '#a78bfa',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    padding: '6px 12px',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  closeBtn: {
-    background: 'transparent',
-    color: '#bcb6cc',
-    border: 'none',
-    fontSize: 18,
-    cursor: 'pointer',
-    padding: 4,
-  },
-  errorBar: {
-    background: 'rgba(239,68,68,0.18)',
-    borderBottom: '1px solid rgba(239,68,68,0.45)',
-    padding: '8px 12px',
-    color: '#fecaca',
-    fontSize: 11,
-  },
-  body: { flex: 1, minHeight: 0 },
-  placeholder: {
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#bcb6cc',
-    fontSize: 12,
-  },
-  footer: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    padding: '8px 12px',
-    background: '#161b22',
-    borderTop: '1px solid #1f2433',
-    color: '#8b8794',
-    fontSize: 11,
-  },
-};

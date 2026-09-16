@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
-import type { TerminalProvider, TerminalSession } from '@codeam/ide-core';
+import { buildTerminalHtml, parseBridgeMessage, type TerminalProvider, type TerminalSession } from '@codeam/ide-core';
 import { useIDETheme } from '../theme';
 
 interface Props {
@@ -19,60 +19,6 @@ interface Props {
  * FileViewerHost / InlineEditor. Keeps the npm tarball lean and
  * lets the user's network handle the cold-start.
  */
-function buildHtml(rows: number, cols: number): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
-<style>
-  html, body { margin:0; padding:0; height:100%; background:#0d1117; overflow:hidden; }
-  #term { position:absolute; inset:0; padding:4px; }
-</style>
-</head>
-<body>
-<div id="term"></div>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
-<script>
-  const post = (m) => window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(m));
-  const term = new window.Terminal({
-    cursorBlink: true,
-    cursorStyle: 'block',
-    fontFamily: 'Menlo, Monaco, monospace',
-    fontSize: 13,
-    rows: ${rows},
-    cols: ${cols},
-    theme: {
-      background: '#0d1117',
-      foreground: '#e5e7eb',
-      cursor: '#a78bfa',
-      red: '#fb7185', green: '#34d399', yellow: '#fbbf24',
-      blue: '#60a5fa', magenta: '#a78bfa', cyan: '#22d3ee', white: '#e5e7eb',
-    },
-    scrollback: 5000,
-  });
-  const fit = new window.FitAddon.FitAddon();
-  term.loadAddon(fit);
-  term.open(document.getElementById('term'));
-  try { fit.fit(); } catch (e) {}
-  window.__bridgeWrite = (s) => { try { term.write(s); } catch (e) {} };
-  window.__bridgeFit = () => {
-    try {
-      fit.fit();
-      post({ type: 'resize', cols: term.cols, rows: term.rows });
-    } catch (e) {}
-  };
-  term.onData((data) => post({ type: 'data', data }));
-  window.addEventListener('resize', () => window.__bridgeFit());
-  // Initial resize after layout settles.
-  setTimeout(() => window.__bridgeFit(), 100);
-  post({ type: 'ready', cols: term.cols, rows: term.rows });
-</script>
-</body>
-</html>`;
-}
 
 /**
  * React Native terminal panel — xterm.js rendered inside a
@@ -102,7 +48,7 @@ export function TerminalPanel({ provider, cwd, rows = 24, cols = 80, title }: Pr
   const mountedRef = useRef(true);
   const dimensionsRef = useRef({ cols, rows });
 
-  const html = useMemo(() => buildHtml(rows, cols), [rows, cols]);
+  const html = useMemo(() => buildTerminalHtml({ rows, cols }), [rows, cols]);
 
   const reportError = useCallback((operation: string, cause: unknown) => {
     if (!mountedRef.current) return;
@@ -217,23 +163,20 @@ export function TerminalPanel({ provider, cwd, rows = 24, cols = 80, title }: Pr
   );
 
   const onMessage = (e: WebViewMessageEvent) => {
-    try {
-      const msg = JSON.parse(e.nativeEvent.data);
-      if (msg.type === 'ready') {
-        dimensionsRef.current = { cols: msg.cols ?? cols, rows: msg.rows ?? rows };
-        setReadyGeneration(webGeneration);
-      } else if (msg.type === 'data' && typeof msg.data === 'string') {
-        void runForCurrentSession('write', (owner, session) => owner.write(session, msg.data));
-      } else if (msg.type === 'resize') {
-        if (typeof msg.cols === 'number' && typeof msg.rows === 'number') {
-          dimensionsRef.current = { cols: msg.cols, rows: msg.rows };
-          void runForCurrentSession('resize', (owner, session) =>
-            owner.resize(session, msg.cols, msg.rows),
-          );
-        }
+    const msg = parseBridgeMessage(e.nativeEvent.data);
+    if (!msg) return;
+    if (msg.type === 'ready') {
+      dimensionsRef.current = { cols: msg.cols ?? cols, rows: msg.rows ?? rows };
+      setReadyGeneration(webGeneration);
+    } else if (msg.type === 'data' && typeof msg.data === 'string') {
+      void runForCurrentSession('write', (owner, session) => owner.write(session, msg.data));
+    } else if (msg.type === 'resize') {
+      if (typeof msg.cols === 'number' && typeof msg.rows === 'number') {
+        dimensionsRef.current = { cols: msg.cols, rows: msg.rows };
+        void runForCurrentSession('resize', (owner, session) =>
+          owner.resize(session, msg.cols, msg.rows),
+        );
       }
-    } catch {
-      /* malformed bridge message — ignore */
     }
   };
 
