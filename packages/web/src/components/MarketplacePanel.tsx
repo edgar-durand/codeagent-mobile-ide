@@ -206,10 +206,7 @@ export function MarketplacePanel({
       // picker entries, and active-state checks all line up on a
       // single key.
       const monacoTheme = vscodeThemeToMonaco({ ...raw, name: ref.name }, ref.name);
-      const nextInstalled = [
-        ...installed.filter((t) => t.name !== monacoTheme.name),
-        monacoTheme,
-      ];
+      const nextInstalled = [...installed.filter((t) => t.name !== monacoTheme.name), monacoTheme];
       await store.set(CUSTOM_THEMES_STORE_KEY, nextInstalled);
       // Activate the freshly-installed theme. Read the existing
       // editor settings so we don't wipe font size / wrap / etc.
@@ -435,9 +432,7 @@ export function MarketplacePanel({
                     </span>
                   </div>
                   <span className="text-[10px] text-gray-400">{ref.publisher}</span>
-                  <p className="text-[11px] text-gray-300 mt-1 line-clamp-2">
-                    {ref.description}
-                  </p>
+                  <p className="text-[11px] text-gray-300 mt-1 line-clamp-2">{ref.description}</p>
                   {err && <span className="text-[10px] text-rose-300 mt-1">{err}</span>}
                   <div className="mt-auto pt-2 flex items-center gap-2">
                     {isActive ? (

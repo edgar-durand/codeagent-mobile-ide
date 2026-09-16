@@ -53,10 +53,7 @@ export function ThemePicker({
             style={[styles.themeChip, activeTheme === t.id && styles.themeChipActive]}
           >
             <Text
-              style={[
-                styles.themeChipText,
-                activeTheme === t.id && styles.themeChipTextActive,
-              ]}
+              style={[styles.themeChipText, activeTheme === t.id && styles.themeChipTextActive]}
             >
               {t.label}
             </Text>
@@ -135,20 +132,13 @@ export function ThemePicker({
               >
                 <Text style={styles.importBtnPrimaryText}>Import</Text>
               </Pressable>
-              <Pressable
-                onPress={onCloseImport}
-                style={styles.importBtnCancel}
-              >
+              <Pressable onPress={onCloseImport} style={styles.importBtnCancel}>
                 <Text style={styles.importBtnCancelText}>Cancel</Text>
               </Pressable>
             </View>
           </View>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            onPress={onOpenImport}
-            style={styles.importTrigger}
-          >
+          <Pressable accessibilityRole="button" onPress={onOpenImport} style={styles.importTrigger}>
             <Text style={styles.importTriggerText}>+ Import VS Code theme…</Text>
           </Pressable>
         ))}

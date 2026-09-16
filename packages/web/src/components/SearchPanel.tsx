@@ -95,10 +95,16 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
           wholeWord,
           regex,
           include: include
-            ? include.split(',').map((s) => s.trim()).filter(Boolean)
+            ? include
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
             : undefined,
           exclude: exclude
-            ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+            ? exclude
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
             : undefined,
         };
         try {
@@ -132,26 +138,25 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
     wholeWord,
     regex,
     include: include
-      ? include.split(',').map((s) => s.trim()).filter(Boolean)
+      ? include
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       : undefined,
     exclude: exclude
-      ? exclude.split(',').map((s) => s.trim()).filter(Boolean)
+      ? exclude
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       : undefined,
   });
 
-  const runReplace = async (
-    targets?: Array<{ path: string; line?: number; column?: number }>,
-  ) => {
+  const runReplace = async (targets?: Array<{ path: string; line?: number; column?: number }>) => {
     if (!replaceSupported || !debouncedQuery || !provider.replace) return;
     setReplacing(true);
     setReplaceStatus(null);
     try {
-      const r = await provider.replace(
-        debouncedQuery,
-        replacement,
-        currentOptions(),
-        targets,
-      );
+      const r = await provider.replace(debouncedQuery, replacement, currentOptions(), targets);
       setReplaceStatus(
         `Replaced ${r.replaced} occurrence${r.replaced === 1 ? '' : 's'} in ${r.filesChanged} file${r.filesChanged === 1 ? '' : 's'}.`,
       );
@@ -177,9 +182,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
         {/* Flex row instead of absolute-positioned icon so the lupa
             renders reliably even when the consumer's Tailwind purge
             doesn't ship `top-1/2`/`-translate-y-1/2` for our paths. */}
-        <div
-          className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50"
-        >
+        <div className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50">
           <svg
             width="12"
             height="12"
@@ -222,9 +225,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
         </div>
 
         {replaceSupported && replaceOpen && (
-          <div
-            className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50"
-          >
+          <div className="flex items-center gap-1.5 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1.5 focus-within:border-violet-500/50">
             <span className="text-[10px] text-gray-500 shrink-0">↦</span>
             <input
               type="text"
@@ -311,9 +312,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
                       <button
                         type="button"
                         disabled={replacing}
-                        onClick={() =>
-                          void runReplace([{ path: g.path }])
-                        }
+                        onClick={() => void runReplace([{ path: g.path }])}
                         className="opacity-0 group-hover:opacity-100 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/30 hover:bg-violet-500/50 text-violet-100 ml-2 transition-opacity"
                         title="Replace in this file"
                       >
@@ -331,11 +330,7 @@ export function SearchPanel({ provider, onOpen, initialQuery }: Props) {
                         title={`${h.path}:${h.line}:${h.column}`}
                       >
                         <span className="font-mono text-[11px] text-gray-300 line-clamp-1">
-                          <HighlightedLine
-                            text={h.text}
-                            column={h.column}
-                            length={h.matchLength}
-                          />
+                          <HighlightedLine text={h.text} column={h.column} length={h.matchLength} />
                         </span>
                       </button>
                     ))}

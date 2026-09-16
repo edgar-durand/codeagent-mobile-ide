@@ -37,12 +37,7 @@ interface Props {
  * the editor state directly. Consumer wires `onResolved` to push
  * the returned content into the Monaco model + dirty buffer.
  */
-export function ConflictBanner({
-  content,
-  onResolved,
-  currentLabel,
-  incomingLabel,
-}: Props) {
+export function ConflictBanner({ content, onResolved, currentLabel, incomingLabel }: Props) {
   const hunks = useMemo(() => detectConflicts(content), [content]);
   if (hunks.length === 0) return null;
 

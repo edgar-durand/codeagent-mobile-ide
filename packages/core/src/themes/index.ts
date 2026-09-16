@@ -8,12 +8,7 @@ import type { MonacoTheme } from '../types/theme';
  * surface them as IDs only; no JSON to register. The GitHub variants
  * are custom palettes registered on InlineEditor mount.
  */
-export const BUILTIN_MONACO_THEMES: readonly string[] = [
-  'vs-dark',
-  'vs',
-  'hc-black',
-  'hc-light',
-];
+export const BUILTIN_MONACO_THEMES: readonly string[] = ['vs-dark', 'vs', 'hc-black', 'hc-light'];
 
 /**
  * Custom themes bundled with `@codeam/ide-core`. The InlineEditor
@@ -21,10 +16,7 @@ export const BUILTIN_MONACO_THEMES: readonly string[] = [
  * for each before it picks up `settings.theme`. Order in this array
  * is the order shown in the picker.
  */
-export const BUNDLED_CUSTOM_THEMES: readonly MonacoTheme[] = [
-  githubDarkTheme,
-  githubLightTheme,
-];
+export const BUNDLED_CUSTOM_THEMES: readonly MonacoTheme[] = [githubDarkTheme, githubLightTheme];
 
 /**
  * Default theme metadata for the picker UI. `id` is what gets stored
@@ -135,7 +127,7 @@ export const MARKETPLACE_THEMES: readonly MarketplaceThemeRef[] = [
   {
     name: 'Solarized Light',
     publisher: 'Microsoft',
-    description: 'The light variant of Ethan Schoonover\'s Solarized.',
+    description: "The light variant of Ethan Schoonover's Solarized.",
     url: 'https://raw.githubusercontent.com/microsoft/vscode/main/extensions/theme-solarized-light/themes/solarized-light-color-theme.json',
     homepage: 'https://ethanschoonover.com/solarized/',
     kind: 'light',
@@ -190,7 +182,7 @@ export const MARKETPLACE_THEMES: readonly MarketplaceThemeRef[] = [
   {
     name: 'One Dark Pro',
     publisher: 'Binaryify',
-    description: 'Atom\'s iconic One Dark theme — VS Code edition.',
+    description: "Atom's iconic One Dark theme — VS Code edition.",
     url: 'https://raw.githubusercontent.com/Binaryify/OneDark-Pro/master/themes/OneDark-Pro.json',
     homepage: 'https://github.com/Binaryify/OneDark-Pro',
     kind: 'dark',
@@ -215,7 +207,7 @@ export const MARKETPLACE_THEMES: readonly MarketplaceThemeRef[] = [
     swatch: { bg: '#193549', fg: '#ffffff', accent: '#ffc600' },
   },
   {
-    name: 'SynthWave \'84',
+    name: "SynthWave '84",
     publisher: 'Robb Owen',
     description: 'A neon-glow dark theme inspired by 80s sci-fi.',
     url: 'https://raw.githubusercontent.com/robb0wen/synthwave-vscode/master/themes/synthwave-color-theme.json',

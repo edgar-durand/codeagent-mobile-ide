@@ -69,12 +69,15 @@ export function TerminalPanel({ provider, cwd, rows = 24, cols = 80, title }: Pr
     });
   }, []);
 
-  const rerun = useCallback((cmd: string) => {
-    const session = sessionRef.current;
-    if (!session) return;
-    void providerRef.current.write(session, cmd + '\r');
-    pushHistory(cmd);
-  }, [pushHistory]);
+  const rerun = useCallback(
+    (cmd: string) => {
+      const session = sessionRef.current;
+      if (!session) return;
+      void providerRef.current.write(session, cmd + '\r');
+      pushHistory(cmd);
+    },
+    [pushHistory],
+  );
 
   const copyToClipboard = useCallback((text: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -150,7 +153,9 @@ export function TerminalPanel({ provider, cwd, rows = 24, cols = 80, title }: Pr
       })
       .catch((e) => {
         if (active) {
-          term.writeln(`\x1b[31mTerminal error: ${e instanceof Error ? e.message : String(e)}\x1b[0m`);
+          term.writeln(
+            `\x1b[31mTerminal error: ${e instanceof Error ? e.message : String(e)}\x1b[0m`,
+          );
           setExitCode(-1);
         }
       });

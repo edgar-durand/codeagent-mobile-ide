@@ -19,9 +19,7 @@ export function chipFor(entry: GitStatusEntry): { label: string; color: string }
 
 export function GitStatusChip({ entry }: GitStatusChipProps) {
   const chip = chipFor(entry);
-  return (
-    <Text style={[styles.chip, { color: chip.color }]}>{chip.label}</Text>
-  );
+  return <Text style={[styles.chip, { color: chip.color }]}>{chip.label}</Text>;
 }
 
 const styles = StyleSheet.create({

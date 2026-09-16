@@ -283,9 +283,7 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
               <button
                 key={p.type}
                 type="button"
-                onClick={() =>
-                  setMessage((prev) => applyCommitPrefix(prev, p.type, p.emoji))
-                }
+                onClick={() => setMessage((prev) => applyCommitPrefix(prev, p.type, p.emoji))}
                 title={`${p.type}${p.emoji ? ' ' + p.emoji : ''}`}
                 className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-gray-700/60 text-gray-300 hover:bg-violet-500/20 hover:border-violet-500/60 hover:text-violet-100 transition-colors"
               >
@@ -438,7 +436,9 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
                           </span>
                         ))
                       : null}
-                    <span className="text-[10px] text-gray-500 shrink-0">{timeAgo(c.timestamp)}</span>
+                    <span className="text-[10px] text-gray-500 shrink-0">
+                      {timeAgo(c.timestamp)}
+                    </span>
                   </div>
                 ))
               )}

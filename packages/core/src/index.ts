@@ -23,29 +23,13 @@ export type {
   GitLogEntry,
 } from './types/git';
 
-export type {
-  FileTreeEntry,
-  FileTreePayload,
-  FileTreeProvider,
-} from './types/file-tree';
+export type { FileTreeEntry, FileTreePayload, FileTreeProvider } from './types/file-tree';
 
-export type {
-  SearchProvider,
-  SearchHit,
-  SearchOptions,
-  SearchResult,
-} from './types/search';
+export type { SearchProvider, SearchHit, SearchOptions, SearchResult } from './types/search';
 
-export type {
-  TerminalProvider,
-  TerminalSession,
-  TerminalEvent,
-} from './types/terminal';
+export type { TerminalProvider, TerminalSession, TerminalEvent } from './types/terminal';
 
-export type {
-  SettingsStore,
-  EditorSettingsSnapshot,
-} from './types/settings';
+export type { SettingsStore, EditorSettingsSnapshot } from './types/settings';
 export {
   DEFAULT_EDITOR_SETTINGS,
   CUSTOM_THEMES_STORE_KEY,
@@ -56,12 +40,7 @@ export type { IdeAdapters } from './types/adapters';
 
 export { detectLanguage, LANGUAGE_BY_EXTENSION } from './language-detection';
 
-export type {
-  MonacoTheme,
-  ThemeRule,
-  VSCodeColorTheme,
-  VSCodeTokenColor,
-} from './types/theme';
+export type { MonacoTheme, ThemeRule, VSCodeColorTheme, VSCodeTokenColor } from './types/theme';
 export {
   vscodeThemeToMonaco,
   parseJsonc,
@@ -100,13 +79,12 @@ export {
 
 export { reconstructOriginal } from './utils/reconstructOriginal';
 
-export {
-  MONACO_CDN_BASE,
-  buildEditorHtml,
-  buildDiffHtml,
-  buildTerminalHtml,
+export { MONACO_CDN_BASE, buildEditorHtml, buildDiffHtml, buildTerminalHtml } from './monaco-html';
+export type {
+  BuildEditorHtmlOptions,
+  BuildDiffHtmlOptions,
+  BuildTerminalHtmlOptions,
 } from './monaco-html';
-export type { BuildEditorHtmlOptions, BuildDiffHtmlOptions, BuildTerminalHtmlOptions } from './monaco-html';
 
 export { parseBridgeMessage } from './bridge';
 export type { BridgeMessageMap, BridgeMessageType, BridgeMessage } from './bridge';

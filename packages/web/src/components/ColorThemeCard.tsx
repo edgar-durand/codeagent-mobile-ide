@@ -41,17 +41,11 @@ export function ColorThemeCard({
       </div>
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="flex items-baseline gap-2">
-          <span className="text-[13px] font-semibold text-gray-100 truncate">
-            {ref.name}
-          </span>
-          <span className="text-[10px] uppercase tracking-wider text-gray-500">
-            {ref.kind}
-          </span>
+          <span className="text-[13px] font-semibold text-gray-100 truncate">{ref.name}</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500">{ref.kind}</span>
         </div>
         <span className="text-[10px] text-gray-400">{ref.publisher}</span>
-        <p className="text-[11px] text-gray-300 mt-1 line-clamp-2">
-          {ref.description}
-        </p>
+        <p className="text-[11px] text-gray-300 mt-1 line-clamp-2">{ref.description}</p>
         {error && <span className="text-[10px] text-rose-300 mt-1">{error}</span>}
         <div className="mt-auto pt-2 flex items-center gap-2">
           {isActive ? (

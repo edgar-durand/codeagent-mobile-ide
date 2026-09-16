@@ -13,10 +13,7 @@ function chipFor(entry: GitStatusEntry): { label: string; color: string } {
 }
 
 interface ChangesListProps {
-  status:
-    | { entries: GitStatusEntry[]; error?: string }
-    | null
-    | { error: string };
+  status: { entries: GitStatusEntry[]; error?: string } | null | { error: string };
   statusEntries: GitStatusEntry[];
   onSelect?: (entry: GitStatusEntry) => void;
 }
@@ -32,9 +29,7 @@ export function ChangesList({ status, statusEntries, onSelect }: ChangesListProp
   }
 
   if ('error' in status && status.error) {
-    return (
-      <div className="text-center text-rose-300 text-[12px] py-6 px-4">{status.error}</div>
-    );
+    return <div className="text-center text-rose-300 text-[12px] py-6 px-4">{status.error}</div>;
   }
 
   if (statusEntries.length === 0) return null;

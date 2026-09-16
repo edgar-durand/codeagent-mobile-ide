@@ -43,7 +43,10 @@ function IconCell({ ref: r }: { ref: FileIconRef }): ReactNode {
       <span
         aria-hidden
         className="inline-block w-4 h-4 bg-no-repeat bg-center"
-        style={{ backgroundImage: `url(${JSON.stringify(r.uri).slice(1, -1)})`, backgroundSize: 'contain' }}
+        style={{
+          backgroundImage: `url(${JSON.stringify(r.uri).slice(1, -1)})`,
+          backgroundSize: 'contain',
+        }}
       />
     );
   }

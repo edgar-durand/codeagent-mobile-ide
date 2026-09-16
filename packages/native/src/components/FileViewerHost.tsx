@@ -22,7 +22,6 @@ import { useFileViewer } from './FileViewerContext';
 import { useIDETheme } from '../theme';
 import { useAsyncAdapter } from '../hooks/useAsyncAdapter';
 
-
 /**
  * Renders the file viewer modal when the {@link useFileViewer} context has
  * an active request. Mount it once near the root of any screen that may

@@ -60,13 +60,8 @@ export function CommitComposer({
         {CC_PREFIXES.map((p) => (
           <Pressable
             key={p.type}
-            onPress={() =>
-              onMessageChange(applyCommitPrefix(message, p.type, p.emoji))
-            }
-            style={({ pressed }) => [
-              styles.prefixChip,
-              pressed && styles.prefixChipPressed,
-            ]}
+            onPress={() => onMessageChange(applyCommitPrefix(message, p.type, p.emoji))}
+            style={({ pressed }) => [styles.prefixChip, pressed && styles.prefixChipPressed]}
             accessibilityRole="button"
             accessibilityLabel={`Use ${p.type} commit prefix`}
           >
@@ -100,16 +95,12 @@ export function CommitComposer({
           accessibilityState={{ disabled: !canCommit, busy: busy === 'commit' }}
         >
           <Ionicons name="checkmark" size={13} color="#fff" />
-          <Text style={styles.commitBtnText}>
-            {busy === 'commit' ? 'Committing…' : 'Commit'}
-          </Text>
+          <Text style={styles.commitBtnText}>{busy === 'commit' ? 'Committing…' : 'Commit'}</Text>
         </Pressable>
       </View>
       {error || ok ? (
         <View style={[styles.flash, error ? styles.flashErr : styles.flashOk]}>
-          <Text
-            style={[styles.flashText, error ? styles.flashErrText : styles.flashOkText]}
-          >
+          <Text style={[styles.flashText, error ? styles.flashErrText : styles.flashOkText]}>
             {error ?? ok}
           </Text>
         </View>

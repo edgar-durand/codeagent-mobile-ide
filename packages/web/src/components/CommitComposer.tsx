@@ -58,9 +58,7 @@ export function CommitComposer({
           <button
             key={p.type}
             type="button"
-            onClick={() =>
-              onMessageChange(applyCommitPrefix(message, p.type, p.emoji))
-            }
+            onClick={() => onMessageChange(applyCommitPrefix(message, p.type, p.emoji))}
             title={`${p.type}${p.emoji ? ' ' + p.emoji : ''}`}
             className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-gray-700/60 text-gray-300 hover:bg-violet-500/20 hover:border-violet-500/60 hover:text-violet-100 transition-colors"
           >

@@ -171,10 +171,7 @@ export function SettingsPanel({
     if (settings.theme === name) update({ theme: 'vs-dark' });
   };
 
-  const themeChoices = [
-    ...themes,
-    ...customThemes.map((t) => ({ id: t.name, label: t.name })),
-  ];
+  const themeChoices = [...themes, ...customThemes.map((t) => ({ id: t.name, label: t.name }))];
 
   return (
     <div className="flex flex-col h-full bg-[#0d1117] text-gray-200 min-w-0">
@@ -260,9 +257,7 @@ export function SettingsPanel({
                   rows={6}
                   className="w-full bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1 text-[11px] text-gray-200 font-mono focus:outline-none focus:border-violet-500/50"
                 />
-                {importError && (
-                  <span className="text-[11px] text-rose-300">{importError}</span>
-                )}
+                {importError && <span className="text-[11px] text-rose-300">{importError}</span>}
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -284,8 +279,8 @@ export function SettingsPanel({
                   </button>
                 </div>
                 <span className="text-[10px] text-gray-500">
-                  Tip: download a marketplace theme as a `.vsix`, rename to `.zip`,
-                  extract, and paste the contents of `themes/&lt;name&gt;.json`.
+                  Tip: download a marketplace theme as a `.vsix`, rename to `.zip`, extract, and
+                  paste the contents of `themes/&lt;name&gt;.json`.
                 </span>
               </div>
             ) : (
@@ -306,7 +301,9 @@ export function SettingsPanel({
               min={8}
               max={32}
               value={settings.fontSize}
-              onChange={(e) => update({ fontSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.fontSize })}
+              onChange={(e) =>
+                update({ fontSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.fontSize })
+              }
               className="w-20 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1 text-[12px] text-gray-200 focus:outline-none focus:border-violet-500/50"
             />
           </Field>
@@ -316,7 +313,9 @@ export function SettingsPanel({
               min={1}
               max={8}
               value={settings.tabSize}
-              onChange={(e) => update({ tabSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.tabSize })}
+              onChange={(e) =>
+                update({ tabSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.tabSize })
+              }
               className="w-20 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1 text-[12px] text-gray-200 focus:outline-none focus:border-violet-500/50"
             />
           </Field>
@@ -325,11 +324,7 @@ export function SettingsPanel({
             on={settings.wordWrap}
             onChange={(v) => update({ wordWrap: v })}
           />
-          <Toggle
-            label="Minimap"
-            on={settings.minimap}
-            onChange={(v) => update({ minimap: v })}
-          />
+          <Toggle label="Minimap" on={settings.minimap} onChange={(v) => update({ minimap: v })} />
           <Toggle
             label="Line numbers"
             on={settings.lineNumbers}

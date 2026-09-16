@@ -30,7 +30,6 @@ interface DiffState {
   modified: string;
 }
 
-
 /**
  * React Native side-by-side diff viewer. Same UX as the web
  * DiffViewer: fetch the working-tree buffer + unified diff,

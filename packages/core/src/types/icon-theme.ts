@@ -34,9 +34,7 @@ export interface FileIconResolver {
  *   `<span>`. Cheap fallback for themes that ship no assets at all.
  */
 export type FileIconRef =
-  | { kind: 'none' }
-  | { kind: 'uri'; uri: string }
-  | { kind: 'emoji'; char: string };
+  { kind: 'none' } | { kind: 'uri'; uri: string } | { kind: 'emoji'; char: string };
 
 /**
  * Raw shape of a VS Code marketplace `*-icon-theme.json`. The
@@ -108,10 +106,7 @@ export interface VSCodeIconDefinition {
  * SVGs as base64 directly in `iconPath`), and falls back to the
  * theme's `_file` / `_folder` defaults for unmapped paths.
  */
-export function buildIconResolver(
-  raw: VSCodeIconTheme,
-  baseUrl: string,
-): FileIconResolver {
+export function buildIconResolver(raw: VSCodeIconTheme, baseUrl: string): FileIconResolver {
   const join = (rel: string): string => {
     if (!rel) return '';
     if (rel.startsWith('data:') || rel.startsWith('http://') || rel.startsWith('https://')) {

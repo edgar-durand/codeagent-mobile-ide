@@ -144,4 +144,3 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
     </div>
   );
 }
-

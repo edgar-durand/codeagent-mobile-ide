@@ -124,7 +124,7 @@ Approximate monthly costs at 10K MAU consumer app:
 | Compute (if we provide workspaces)              | variable — start at $0 by using user's Codespaces, add later |
 | **Total fixed-ish**                             | **~$3.5K / mo at 10K MAU**                                   |
 
-Revenue at 1K paying users × $9.99 = ~$10K/mo (gross, before app store cut). After ~30% cut = **~$7K/mo net**.
+Revenue at 1K paying users × $9.99 = ~$10K/mo (gross, before app store cut). After ~~30% cut = **~~$7K/mo net**.
 
 Break-even at ~500 paying users (5% conversion of 10K MAU). Realistic if the library is good + we get ANY editorial coverage in dev-tools press.
 

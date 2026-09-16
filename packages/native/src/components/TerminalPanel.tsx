@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { ResilientWebView } from './ResilientWebView';
-import { buildTerminalHtml, parseBridgeMessage, type TerminalProvider, type TerminalSession } from '@codeam/ide-core';
+import {
+  buildTerminalHtml,
+  parseBridgeMessage,
+  type TerminalProvider,
+  type TerminalSession,
+} from '@codeam/ide-core';
 import { useIDETheme } from '../theme';
 
 interface Props {

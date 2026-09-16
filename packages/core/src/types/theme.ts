@@ -206,16 +206,16 @@ function mapType(t: VSCodeColorTheme['type']): MonacoTheme['base'] {
  * @param fallbackName Used when the theme JSON omits a `name`
  *   (uncommon but allowed by the marketplace schema).
  */
-export function vscodeThemeToMonaco(
-  raw: VSCodeColorTheme,
-  fallbackName: string,
-): MonacoTheme {
+export function vscodeThemeToMonaco(raw: VSCodeColorTheme, fallbackName: string): MonacoTheme {
   const rules: ThemeRule[] = [];
   for (const tc of raw.tokenColors ?? []) {
     const scopes = Array.isArray(tc.scope)
       ? tc.scope
       : typeof tc.scope === 'string'
-        ? tc.scope.split(',').map((s) => s.trim()).filter(Boolean)
+        ? tc.scope
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : [];
     if (scopes.length === 0) {
       // Some themes use a tokenColor with no `scope` as a default —

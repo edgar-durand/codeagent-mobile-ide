@@ -78,9 +78,7 @@ export function SearchInput({
       </div>
 
       <details className="text-[11px] text-gray-400">
-        <summary className="cursor-pointer hover:text-gray-200">
-          files to include / exclude
-        </summary>
+        <summary className="cursor-pointer hover:text-gray-200">files to include / exclude</summary>
         <div className="mt-2 flex flex-col gap-1.5">
           <input
             type="text"

@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   runCancellable,
@@ -284,9 +277,7 @@ export function SourceControlPanel({ provider, onSelect, title, reloadKey }: Pro
               );
             }
             if (item.kind === 'change') {
-              return (
-                <ChangesList entries={[item.entry]} onSelect={onSelect} />
-              );
+              return <ChangesList entries={[item.entry]} onSelect={onSelect} />;
             }
             // graphHeader
             return (

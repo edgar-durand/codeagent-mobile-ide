@@ -22,12 +22,7 @@ interface GitGraphSectionProps {
   onReload: () => void;
 }
 
-export function GitGraphSection({
-  log,
-  graphOpen,
-  onToggleGraph,
-  onReload,
-}: GitGraphSectionProps) {
+export function GitGraphSection({ log, graphOpen, onToggleGraph, onReload }: GitGraphSectionProps) {
   return (
     <div className="mt-2 px-3 border-t border-gray-800/60 pt-2 flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between py-1">

@@ -40,7 +40,6 @@ interface Props {
   onAfterSave?: (path: string) => void;
 }
 
-
 function isSnapshot(v: unknown): v is Partial<EditorSettingsSnapshot> {
   return typeof v === 'object' && v !== null;
 }

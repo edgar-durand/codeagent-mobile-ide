@@ -84,11 +84,17 @@ export function FileViewerHost() {
   if (!request) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[9999] flex items-stretch justify-stretch" role="dialog" aria-modal>
+    <div
+      className="fixed inset-0 bg-black/50 z-[9999] flex items-stretch justify-stretch"
+      role="dialog"
+      aria-modal
+    >
       <div className="flex-1 flex flex-col bg-[#0d1117] text-gray-200 font-['-apple-system',BlinkMacSystemFont,'Segoe_UI',Roboto,sans-serif]">
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#1f2433] bg-[#161b22]">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[13px] overflow-hidden text-ellipsis whitespace-nowrap">{request.path}</span>
+            <span className="text-[13px] overflow-hidden text-ellipsis whitespace-nowrap">
+              {request.path}
+            </span>
             {dirty && <span className="text-amber-400 text-lg ml-1">●</span>}
           </div>
           <div className="flex items-center gap-2.5">
@@ -102,15 +108,26 @@ export function FileViewerHost() {
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
-            <button type="button" onClick={close} className="bg-transparent text-[#bcb6cc] border-0 text-lg cursor-pointer p-1" aria-label="Close">
+            <button
+              type="button"
+              onClick={close}
+              className="bg-transparent text-[#bcb6cc] border-0 text-lg cursor-pointer p-1"
+              aria-label="Close"
+            >
               ✕
             </button>
           </div>
         </div>
-        {error && <div className="bg-rose-500/20 border-b border-rose-500/40 px-3 py-2 text-rose-200 text-[11px]">{error}</div>}
+        {error && (
+          <div className="bg-rose-500/20 border-b border-rose-500/40 px-3 py-2 text-rose-200 text-[11px]">
+            {error}
+          </div>
+        )}
         <div className="flex-1 min-h-0">
           {loading ? (
-            <div className="h-full flex items-center justify-center text-[#bcb6cc] text-xs">Fetching {request.path}…</div>
+            <div className="h-full flex items-center justify-center text-[#bcb6cc] text-xs">
+              Fetching {request.path}…
+            </div>
           ) : !fetcher ? (
             <div className="h-full flex items-center justify-center text-[#bcb6cc] text-xs">
               No active session. Pair an IDE plugin or CLI first.

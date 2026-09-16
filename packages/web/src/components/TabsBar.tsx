@@ -49,14 +49,7 @@ interface ContextMenuState {
  * live in a separate component — `Breadcrumbs.tsx` — so consumers
  * can dock them independently.
  */
-export function TabsBar({
-  tabs,
-  activeId,
-  onSelect,
-  onClose,
-  onBulkClose,
-  rightActions,
-}: Props) {
+export function TabsBar({ tabs, activeId, onSelect, onClose, onBulkClose, rightActions }: Props) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   // Dismiss the context menu on any outside click / Escape press.
   useEffect(() => {
@@ -99,10 +92,7 @@ export function TabsBar({
             >
               {t.icon ? <span className="text-[12px]">{t.icon}</span> : null}
               <span
-                className={[
-                  'text-[12px] font-mono truncate',
-                  t.preview ? 'italic' : '',
-                ].join(' ')}
+                className={['text-[12px] font-mono truncate', t.preview ? 'italic' : ''].join(' ')}
                 title={t.id}
               >
                 {t.label}

@@ -12,7 +12,9 @@ export interface BuildEditorHtmlOptions {
   /** When true, the editor is read-only. */
   readOnly?: boolean;
   /** Bundled custom themes to register before editor instantiation. */
-  bundledThemes?: ReadonlyArray<Pick<MonacoTheme, 'name' | 'base' | 'inherit' | 'rules' | 'colors'>>;
+  bundledThemes?: ReadonlyArray<
+    Pick<MonacoTheme, 'name' | 'base' | 'inherit' | 'rules' | 'colors'>
+  >;
 }
 
 const DEFAULT_SETTINGS: EditorSettingsSnapshot = {

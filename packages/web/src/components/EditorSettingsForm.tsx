@@ -15,7 +15,9 @@ export function EditorSettingsForm({ settings, onChange }: EditorSettingsFormPro
           min={8}
           max={32}
           value={settings.fontSize}
-          onChange={(e) => onChange({ fontSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.fontSize })}
+          onChange={(e) =>
+            onChange({ fontSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.fontSize })
+          }
           className="w-20 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1 text-[12px] text-gray-200 focus:outline-none focus:border-violet-500/50"
         />
       </Field>
@@ -25,7 +27,9 @@ export function EditorSettingsForm({ settings, onChange }: EditorSettingsFormPro
           min={1}
           max={8}
           value={settings.tabSize}
-          onChange={(e) => onChange({ tabSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.tabSize })}
+          onChange={(e) =>
+            onChange({ tabSize: Number(e.target.value) || DEFAULT_EDITOR_SETTINGS.tabSize })
+          }
           className="w-20 bg-gray-900/70 border border-gray-700/60 rounded-md px-2 py-1 text-[12px] text-gray-200 focus:outline-none focus:border-violet-500/50"
         />
       </Field>
@@ -34,11 +38,7 @@ export function EditorSettingsForm({ settings, onChange }: EditorSettingsFormPro
         on={settings.wordWrap}
         onChange={(v) => onChange({ wordWrap: v })}
       />
-      <Toggle
-        label="Minimap"
-        on={settings.minimap}
-        onChange={(v) => onChange({ minimap: v })}
-      />
+      <Toggle label="Minimap" on={settings.minimap} onChange={(v) => onChange({ minimap: v })} />
       <Toggle
         label="Line numbers"
         on={settings.lineNumbers}

@@ -37,9 +37,7 @@ export function SearchResultList({
   onReplaceFile,
 }: SearchResultListProps) {
   if (!debouncedQuery) {
-    return (
-      <div className="text-center text-gray-500 text-[11px] py-8">Type to search…</div>
-    );
+    return <div className="text-center text-gray-500 text-[11px] py-8">Type to search…</div>;
   }
 
   if (loading) {
@@ -52,9 +50,7 @@ export function SearchResultList({
   }
 
   if (groups.length === 0) {
-    return (
-      <div className="text-center text-gray-500 text-[11px] py-8">No results.</div>
-    );
+    return <div className="text-center text-gray-500 text-[11px] py-8">No results.</div>;
   }
 
   return (
@@ -74,9 +70,7 @@ export function SearchResultList({
                 onClick={() => onToggle(g.path)}
                 className="flex items-center gap-1.5 text-left flex-1 min-w-0"
               >
-                <span className="text-[10px] text-gray-500 w-3">
-                  {isCollapsed ? '▸' : '▾'}
-                </span>
+                <span className="text-[10px] text-gray-500 w-3">{isCollapsed ? '▸' : '▾'}</span>
                 <span className="text-[14px]">📄</span>
                 <span className="font-mono text-[12px] text-gray-200 truncate flex-1">
                   {g.path}
@@ -105,11 +99,7 @@ export function SearchResultList({
                   title={`${h.path}:${h.line}:${h.column}`}
                 >
                   <span className="font-mono text-[11px] text-gray-300 line-clamp-1">
-                    <HighlightedLine
-                      text={h.text}
-                      column={h.column}
-                      length={h.matchLength}
-                    />
+                    <HighlightedLine text={h.text} column={h.column} length={h.matchLength} />
                   </span>
                 </button>
               ))}
