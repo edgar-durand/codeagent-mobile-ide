@@ -52,6 +52,7 @@ export default [
         HTMLButtonElement: 'readonly',
         HTMLPreElement: 'readonly',
         HTMLTextAreaElement: 'readonly',
+        Event: 'readonly',
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
         ResizeObserver: 'readonly',
