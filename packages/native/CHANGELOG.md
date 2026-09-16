@@ -6,6 +6,28 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.13.0] — 2026-09-16
+
+### Added
+
+- **core:** Let runCancellable compose an effect-owned teardown
+
+### Changed
+
+- **core:** Add runCancellable and finish the useAsyncAdapter contract
+
+### Chore
+
+- **meta:** Run prettier on staged ts/tsx so formatting stops drifting
+
+### Fixed
+
+- **web:** Surface file-tree load failures with a retry instead of an empty tree
+
+### Tests
+
+- **web:** Add the missing vitest setup and first component specs
+
 ## [0.2.0] — 2026-09-16
 
 ### Changed
