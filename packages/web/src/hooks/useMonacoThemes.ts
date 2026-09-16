@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import {
   BUNDLED_CUSTOM_THEMES,
+  runCancellable,
   type MonacoTheme,
   type SettingsStore,
 } from '@codeam/ide-core';
@@ -103,30 +104,29 @@ export function useMonacoThemes({ monaco, store, themeName, extras }: Options): 
   // Pull user-imported themes from the store and register them too.
   // Re-runs when the store fires a `customThemes` change so freshly
   // imported themes light up without a reload.
-  useEffect(() => {
-    if (!monaco || !store) return;
-    let cancelled = false;
-    const register = (raw: unknown) => {
-      if (!Array.isArray(raw) || cancelled) return;
-      for (const t of raw as MonacoTheme[]) {
-        if (!t || typeof t.name !== 'string') continue;
-        monaco.editor.defineTheme(t.name, {
-          base: t.base,
-          inherit: t.inherit,
-          rules: t.rules,
-          colors: t.colors,
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        if (!monaco || !store) return;
+        const register = (raw: unknown) => {
+          if (!Array.isArray(raw) || isCancelled()) return;
+          for (const t of raw as MonacoTheme[]) {
+            if (!t || typeof t.name !== 'string') continue;
+            monaco.editor.defineTheme(t.name, {
+              base: t.base,
+              inherit: t.inherit,
+              rules: t.rules,
+              colors: t.colors,
+            });
+          }
+        };
+        void store.get(CUSTOM_THEMES_STORE_KEY).then(register);
+        return store.watch((key, value) => {
+          if (key === CUSTOM_THEMES_STORE_KEY) register(value);
         });
-      }
-    };
-    void store.get(CUSTOM_THEMES_STORE_KEY).then(register);
-    const off = store.watch((key, value) => {
-      if (key === CUSTOM_THEMES_STORE_KEY) register(value);
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [monaco, store]);
+      }),
+    [monaco, store],
+  );
 
   // Apply the active theme. Runs after the defineTheme effects
   // settle (React processes effects in declaration order), so

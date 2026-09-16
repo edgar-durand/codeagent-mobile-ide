@@ -115,3 +115,73 @@ describe('runCancellable', () => {
     expect(() => cancel()).not.toThrow();
   });
 });
+
+describe('runCancellable with an effect-owned teardown', () => {
+  it("runs the effect's own teardown alongside cancellation", () => {
+    const unsubscribe = vi.fn();
+    const cancel = runCancellable(() => unsubscribe);
+
+    expect(unsubscribe).not.toHaveBeenCalled();
+    cancel();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels in-flight work even when the effect also owns a subscription', async () => {
+    const unsubscribe = vi.fn();
+    const commit = vi.fn();
+    let resolveGet: (value: string) => void = () => undefined;
+    const pending = new Promise<string>((resolve) => {
+      resolveGet = resolve;
+    });
+
+    const cancel = runCancellable((isCancelled) => {
+      void pending.then((value) => {
+        if (isCancelled()) return;
+        commit(value);
+      });
+      return unsubscribe;
+    });
+
+    cancel();
+    resolveGet('too late');
+    await flush();
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps cancelling when the effect-owned teardown throws', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let cancelledAfterTeardown: boolean | null = null;
+
+    const cancel = runCancellable((isCancelled) => {
+      void Promise.resolve().then(() => {
+        cancelledAfterTeardown = isCancelled();
+      });
+      return () => {
+        throw new Error('unsubscribe exploded');
+      };
+    });
+
+    expect(() => cancel()).not.toThrow();
+    expect(consoleError).toHaveBeenCalledWith(
+      '[runCancellable] uncaught error in effect teardown:',
+      expect.objectContaining({ message: 'unsubscribe exploded' }),
+    );
+
+    return flush().then(() => {
+      expect(cancelledAfterTeardown).toBe(true);
+    });
+  });
+
+  it('treats a returned function as teardown, not as a resolved promise', () => {
+    // Guards the `typeof result === 'function'` branch: a sync effect
+    // returning a cleanup must never be mistaken for a thenable.
+    const unsubscribe = vi.fn();
+    const cancel = runCancellable(() => unsubscribe);
+    cancel();
+    cancel();
+    // Teardown is invoked once per cancel call; React only calls it once.
+    expect(unsubscribe).toHaveBeenCalledTimes(2);
+  });
+});

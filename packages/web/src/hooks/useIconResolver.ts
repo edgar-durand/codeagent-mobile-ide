@@ -39,28 +39,27 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
   const [resolver, setResolver] = useState<FileIconResolver | null>(null);
 
   // Track the active theme pointer.
-  useEffect(() => {
-    if (!store) return;
-    let cancelled = false;
-    void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      setActive(
-        v && typeof v === 'object' && 'id' in v && 'url' in v ? (v as ActiveIconTheme) : null,
-      );
-    });
-    const off = store.watch((key, value) => {
-      if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
-      setActive(
-        value && typeof value === 'object' && 'id' in value && 'url' in value
-          ? (value as ActiveIconTheme)
-          : null,
-      );
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [store]);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        if (!store) return;
+        void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
+          if (isCancelled()) return;
+          setActive(
+            v && typeof v === 'object' && 'id' in v && 'url' in v ? (v as ActiveIconTheme) : null,
+          );
+        });
+        return store.watch((key, value) => {
+          if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
+          setActive(
+            value && typeof value === 'object' && 'id' in value && 'url' in value
+              ? (value as ActiveIconTheme)
+              : null,
+          );
+        });
+      }),
+    [store],
+  );
 
   // Fetch + parse the theme JSON whenever the pointer changes.
   useEffect(

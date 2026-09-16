@@ -14,8 +14,17 @@
  */
 export type CancellationCheck = () => boolean;
 
-/** Effect body that can bail out once its run is superseded. */
-export type CancellableEffect = (isCancelled: CancellationCheck) => void | Promise<void>;
+/**
+ * Effect body that can bail out once its run is superseded.
+ *
+ * A synchronous body may return its own teardown — unsubscribing a
+ * store watcher, aborting a controller — which `runCancellable` folds
+ * into the teardown it hands back. An `async` body can't, because by
+ * the time it resolves React has long since taken the return value.
+ */
+export type CancellableEffect = (
+  isCancelled: CancellationCheck,
+) => void | (() => void) | Promise<void>;
 
 /**
  * Runs `effect` and returns the teardown that cancels it — i.e. the
@@ -35,6 +44,23 @@ export type CancellableEffect = (isCancelled: CancellationCheck) => void | Promi
  * );
  * ```
  *
+ * Effects that own a subscription as well as a fetch return it, and get
+ * both torn down together:
+ *
+ * ```ts
+ * useEffect(
+ *   () =>
+ *     runCancellable((isCancelled) => {
+ *       void store.get('editor').then((value) => {
+ *         if (isCancelled()) return;
+ *         setSettings(value);
+ *       });
+ *       return store.watch(onChange);
+ *     }),
+ *   [store],
+ * );
+ * ```
+ *
  * Cancelling doesn't abort in-flight work — it only stops the effect
  * from writing to a component that has moved on. Adapters that can
  * truly abort should also be handed an `AbortSignal`.
@@ -42,9 +68,13 @@ export type CancellableEffect = (isCancelled: CancellationCheck) => void | Promi
 export function runCancellable(effect: CancellableEffect): () => void {
   let cancelled = false;
   const isCancelled: CancellationCheck = () => cancelled;
+  let ownTeardown: (() => void) | undefined;
+
   try {
     const result = effect(isCancelled);
-    if (result) {
+    if (typeof result === 'function') {
+      ownTeardown = result;
+    } else if (result) {
       // Effects are expected to handle their own failures and render an
       // error state. Anything that escapes would otherwise surface as a
       // bare unhandled rejection (a redbox on RN) with no clue which
@@ -56,8 +86,16 @@ export function runCancellable(effect: CancellableEffect): () => void {
   } catch (error) {
     console.error('[runCancellable] uncaught error in async effect:', error);
   }
+
   return () => {
     cancelled = true;
+    try {
+      ownTeardown?.();
+    } catch (error) {
+      // A throwing unsubscribe must not stop React from tearing down
+      // the rest of the tree.
+      console.error('[runCancellable] uncaught error in effect teardown:', error);
+    }
   };
 }
 

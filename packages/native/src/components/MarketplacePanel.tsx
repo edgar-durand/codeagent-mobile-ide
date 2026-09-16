@@ -12,6 +12,7 @@ import {
 import {
   ICON_THEMES,
   MARKETPLACE_THEMES,
+  runCancellable,
   vscodeThemeToMonaco,
   type MarketplaceIconThemeRef,
   type MarketplaceThemeRef,
@@ -88,53 +89,53 @@ export function MarketplacePanel({
   const operationBusy = useRef(false);
   const ideTheme = useIDETheme();
 
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([
-      store.get(CUSTOM_THEMES_STORE_KEY),
-      store.get('editor'),
-      store.get(ACTIVE_ICON_THEME_STORE_KEY),
-    ])
-      .then(([custom, editor, icons]) => {
-        if (cancelled) return;
-        if (Array.isArray(custom)) setInstalled(custom as MonacoTheme[]);
-        if (
-          editor &&
-          typeof editor === 'object' &&
-          'theme' in editor &&
-          typeof editor.theme === 'string'
-        )
-          setActiveTheme(editor.theme);
-        if (isActiveIconTheme(icons)) setActiveIconTheme(icons);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setLoadError(message(error, 'Could not load marketplace settings.'));
-      });
-    let off: () => void = () => undefined;
-    try {
-      off = store.watch((key, value) => {
-        if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-          setInstalled(value as MonacoTheme[]);
-        } else if (
-          key === 'editor' &&
-          value &&
-          typeof value === 'object' &&
-          'theme' in value &&
-          typeof value.theme === 'string'
-        ) {
-          setActiveTheme(value.theme);
-        } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
-          setActiveIconTheme(isActiveIconTheme(value) ? value : null);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        void Promise.all([
+          store.get(CUSTOM_THEMES_STORE_KEY),
+          store.get('editor'),
+          store.get(ACTIVE_ICON_THEME_STORE_KEY),
+        ])
+          .then(([custom, editor, icons]) => {
+            if (isCancelled()) return;
+            if (Array.isArray(custom)) setInstalled(custom as MonacoTheme[]);
+            if (
+              editor &&
+              typeof editor === 'object' &&
+              'theme' in editor &&
+              typeof editor.theme === 'string'
+            )
+              setActiveTheme(editor.theme);
+            if (isActiveIconTheme(icons)) setActiveIconTheme(icons);
+          })
+          .catch((error: unknown) => {
+            if (!isCancelled())
+              setLoadError(message(error, 'Could not load marketplace settings.'));
+          });
+        try {
+          return store.watch((key, value) => {
+            if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+              setInstalled(value as MonacoTheme[]);
+            } else if (
+              key === 'editor' &&
+              value &&
+              typeof value === 'object' &&
+              'theme' in value &&
+              typeof value.theme === 'string'
+            ) {
+              setActiveTheme(value.theme);
+            } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
+              setActiveIconTheme(isActiveIconTheme(value) ? value : null);
+            }
+          });
+        } catch (error) {
+          setLoadError(message(error, 'Could not watch marketplace settings.'));
+          return undefined;
         }
-      });
-    } catch (error) {
-      setLoadError(message(error, 'Could not watch marketplace settings.'));
-    }
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [store]);
+      }),
+    [store],
+  );
 
   useEffect(
     () => () => {

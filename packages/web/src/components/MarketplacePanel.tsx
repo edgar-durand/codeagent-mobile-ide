@@ -3,6 +3,7 @@ import {
   ICON_THEMES,
   MARKETPLACE_THEMES,
   parseJsonc,
+  runCancellable,
   vscodeThemeToMonaco,
   type MarketplaceIconThemeRef,
   type MarketplaceThemeRef,
@@ -94,46 +95,45 @@ export function MarketplacePanel({
   const [busyName, setBusyName] = useState<string | null>(null);
   const [errorByName, setErrorByName] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    let cancelled = false;
-    void store.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      if (Array.isArray(v)) setInstalled(v as MonacoTheme[]);
-    });
-    void store.get('editor').then((v) => {
-      if (cancelled) return;
-      if (v && typeof v === 'object' && 'theme' in v && typeof v.theme === 'string') {
-        setActiveTheme(v.theme);
-      }
-    });
-    void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
-      if (cancelled) return;
-      if (v && typeof v === 'object' && 'id' in v) setActiveIconTheme(v as ActiveIconTheme);
-    });
-    const off = store.watch((key, value) => {
-      if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-        setInstalled(value as MonacoTheme[]);
-      } else if (
-        key === 'editor' &&
-        value &&
-        typeof value === 'object' &&
-        'theme' in value &&
-        typeof value.theme === 'string'
-      ) {
-        setActiveTheme(value.theme);
-      } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
-        setActiveIconTheme(
-          value && typeof value === 'object' && 'id' in value
-            ? (value as ActiveIconTheme)
-            : null,
-        );
-      }
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [store]);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        void store.get(CUSTOM_THEMES_STORE_KEY).then((v) => {
+          if (isCancelled()) return;
+          if (Array.isArray(v)) setInstalled(v as MonacoTheme[]);
+        });
+        void store.get('editor').then((v) => {
+          if (isCancelled()) return;
+          if (v && typeof v === 'object' && 'theme' in v && typeof v.theme === 'string') {
+            setActiveTheme(v.theme);
+          }
+        });
+        void store.get(ACTIVE_ICON_THEME_STORE_KEY).then((v) => {
+          if (isCancelled()) return;
+          if (v && typeof v === 'object' && 'id' in v) setActiveIconTheme(v as ActiveIconTheme);
+        });
+        return store.watch((key, value) => {
+          if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+            setInstalled(value as MonacoTheme[]);
+          } else if (
+            key === 'editor' &&
+            value &&
+            typeof value === 'object' &&
+            'theme' in value &&
+            typeof value.theme === 'string'
+          ) {
+            setActiveTheme(value.theme);
+          } else if (key === ACTIVE_ICON_THEME_STORE_KEY) {
+            setActiveIconTheme(
+              value && typeof value === 'object' && 'id' in value
+                ? (value as ActiveIconTheme)
+                : null,
+            );
+          }
+        });
+      }),
+    [store],
+  );
 
   const installIconTheme = async (ref: MarketplaceIconThemeRef) => {
     setBusyName(ref.name);

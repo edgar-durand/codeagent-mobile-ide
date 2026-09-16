@@ -5,6 +5,7 @@ import {
   DEFAULT_THEME_CHOICES,
   MARKETPLACE_THEMES,
   parseJsonc,
+  runCancellable,
   vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
   type MarketplaceThemeRef,
@@ -62,35 +63,34 @@ export function SettingsPanel({
   const downloads = useRef(new Set<AbortController>());
   const ideTheme = useIDETheme();
 
-  useEffect(() => {
-    if (!store) return;
-    let cancelled = false;
-    void Promise.all([store.get('editor'), store.get(CUSTOM_THEMES_STORE_KEY)])
-      .then(([editor, custom]) => {
-        if (cancelled) return;
-        if (isSnapshot(editor)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...editor });
-        if (Array.isArray(custom)) setCustomThemes(custom as MonacoTheme[]);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setStoreError(errorMessage(error, 'Could not load settings.'));
-      });
-    let off: () => void = () => undefined;
-    try {
-      off = store.watch((key, value) => {
-        if (key === 'editor' && isSnapshot(value)) {
-          setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
-        } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-          setCustomThemes(value as MonacoTheme[]);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        if (!store) return;
+        void Promise.all([store.get('editor'), store.get(CUSTOM_THEMES_STORE_KEY)])
+          .then(([editor, custom]) => {
+            if (isCancelled()) return;
+            if (isSnapshot(editor)) setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...editor });
+            if (Array.isArray(custom)) setCustomThemes(custom as MonacoTheme[]);
+          })
+          .catch((error: unknown) => {
+            if (!isCancelled()) setStoreError(errorMessage(error, 'Could not load settings.'));
+          });
+        try {
+          return store.watch((key, value) => {
+            if (key === 'editor' && isSnapshot(value)) {
+              setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+            } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+              setCustomThemes(value as MonacoTheme[]);
+            }
+          });
+        } catch (error) {
+          setStoreError(errorMessage(error, 'Could not watch settings for changes.'));
+          return undefined;
         }
-      });
-    } catch (error) {
-      setStoreError(errorMessage(error, 'Could not watch settings for changes.'));
-    }
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [store]);
+      }),
+    [store],
+  );
 
   useEffect(
     () => () => {

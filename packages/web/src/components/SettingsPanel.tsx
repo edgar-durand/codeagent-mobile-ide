@@ -5,6 +5,7 @@ import {
   DEFAULT_THEME_CHOICES,
   MARKETPLACE_THEMES,
   parseJsonc,
+  runCancellable,
   vscodeThemeToMonaco,
   type EditorSettingsSnapshot,
   type MarketplaceThemeRef,
@@ -61,33 +62,32 @@ export function SettingsPanel({
   const [importInput, setImportInput] = useState('');
   const [importOpen, setImportOpen] = useState(false);
 
-  useEffect(() => {
-    if (!store) return;
-    let cancelled = false;
-    void store.get('editor').then((value) => {
-      if (cancelled) return;
-      if (isEditorSnapshot(value)) {
-        setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
-      }
-    });
-    void store.get(CUSTOM_THEMES_STORE_KEY).then((value) => {
-      if (cancelled) return;
-      if (Array.isArray(value)) {
-        setCustomThemes(value as MonacoTheme[]);
-      }
-    });
-    const off = store.watch((key, value) => {
-      if (key === 'editor' && isEditorSnapshot(value)) {
-        setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
-      } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
-        setCustomThemes(value as MonacoTheme[]);
-      }
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [store]);
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        if (!store) return;
+        void store.get('editor').then((value) => {
+          if (isCancelled()) return;
+          if (isEditorSnapshot(value)) {
+            setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+          }
+        });
+        void store.get(CUSTOM_THEMES_STORE_KEY).then((value) => {
+          if (isCancelled()) return;
+          if (Array.isArray(value)) {
+            setCustomThemes(value as MonacoTheme[]);
+          }
+        });
+        return store.watch((key, value) => {
+          if (key === 'editor' && isEditorSnapshot(value)) {
+            setSettings({ ...DEFAULT_EDITOR_SETTINGS, ...value });
+          } else if (key === CUSTOM_THEMES_STORE_KEY && Array.isArray(value)) {
+            setCustomThemes(value as MonacoTheme[]);
+          }
+        });
+      }),
+    [store],
+  );
 
   const update = (patch: Partial<EditorSettingsSnapshot>) => {
     const next = { ...settings, ...patch };

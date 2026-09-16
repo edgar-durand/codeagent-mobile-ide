@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { buildIconResolver, type FileIconResolver, type SettingsStore } from '@codeam/ide-core';
+import {
+  buildIconResolver,
+  runCancellable,
+  type FileIconResolver,
+  type SettingsStore,
+} from '@codeam/ide-core';
 import {
   ACTIVE_ICON_THEME_STORE_KEY,
   deriveIconThemeBaseUrl,
@@ -27,70 +32,70 @@ export function useIconResolver(store: SettingsStore | null): FileIconResolver |
   const [active, setActive] = useState<ActiveIconTheme | null>(null);
   const [resolver, setResolver] = useState<FileIconResolver | null>(null);
 
-  useEffect(() => {
-    if (!store) return;
-    let cancelled = false;
-    void store
-      .get(ACTIVE_ICON_THEME_STORE_KEY)
-      .then((v) => {
-        if (cancelled) return;
-        setActive(isActiveTheme(v) ? v : null);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) console.warn('[useIconResolver] failed to load active icon theme:', error);
-      });
-    let off: () => void = () => undefined;
-    try {
-      off = store.watch((key, value) => {
-        if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
-        setActive(isActiveTheme(value) ? value : null);
-      });
-    } catch (error) {
-      console.warn('[useIconResolver] failed to watch active icon theme:', error);
-    }
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [store]);
-
-  useEffect(() => {
-    if (!active) {
-      setResolver(null);
-      return;
-    }
-    let cancelled = false;
-    const controller = new AbortController();
-    void downloadMarketplaceJson(active.url, isVSCodeIconTheme, controller.signal)
-      .then((theme) => {
-        if (cancelled) return;
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        if (!store) return;
+        void store
+          .get(ACTIVE_ICON_THEME_STORE_KEY)
+          .then((v) => {
+            if (isCancelled()) return;
+            setActive(isActiveTheme(v) ? v : null);
+          })
+          .catch((error: unknown) => {
+            if (!isCancelled())
+              console.warn('[useIconResolver] failed to load active icon theme:', error);
+          });
         try {
-          setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
-        } catch (err) {
-          // Theme JSON downloaded but parse / resolver build failed.
-          // Loud here so users hit by malformed themes can see why
-          // their tree went blank instead of guessing it's a network
-          // issue.
-          console.warn(`[useIconResolver] failed to build resolver from ${active.url}:`, err);
-          setResolver(null);
+          return store.watch((key, value) => {
+            if (key !== ACTIVE_ICON_THEME_STORE_KEY) return;
+            setActive(isActiveTheme(value) ? value : null);
+          });
+        } catch (error) {
+          console.warn('[useIconResolver] failed to watch active icon theme:', error);
+          return undefined;
         }
-      })
-      .catch((err) => {
-        // Loud over silent — fetch failures (CORS, 404, DNS) used to
-        // leave the tree blank with no breadcrumb. The user-visible
-        // symptom is "icons disappeared after reinstall"; the
-        // underlying cause is almost always a stale URL pointer or
-        // a marketplace mirror returning HTML.
-        if (!cancelled) {
-          console.warn(`[useIconResolver] fetch ${active.url} failed:`, err);
+      }),
+    [store],
+  );
+
+  useEffect(
+    () =>
+      runCancellable((isCancelled) => {
+        if (!active) {
           setResolver(null);
+          return;
         }
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [active]);
+        const controller = new AbortController();
+        void downloadMarketplaceJson(active.url, isVSCodeIconTheme, controller.signal)
+          .then((theme) => {
+            if (isCancelled()) return;
+            try {
+              setResolver(buildIconResolver(theme, deriveIconThemeBaseUrl(active.url)));
+            } catch (err) {
+              // Theme JSON downloaded but parse / resolver build failed.
+              // Loud here so users hit by malformed themes can see why
+              // their tree went blank instead of guessing it's a network
+              // issue.
+              console.warn(`[useIconResolver] failed to build resolver from ${active.url}:`, err);
+              setResolver(null);
+            }
+          })
+          .catch((err) => {
+            // Loud over silent — fetch failures (CORS, 404, DNS) used to
+            // leave the tree blank with no breadcrumb. The user-visible
+            // symptom is "icons disappeared after reinstall"; the
+            // underlying cause is almost always a stale URL pointer or
+            // a marketplace mirror returning HTML.
+            if (!isCancelled()) {
+              console.warn(`[useIconResolver] fetch ${active.url} failed:`, err);
+              setResolver(null);
+            }
+          });
+        return () => controller.abort();
+      }),
+    [active],
+  );
 
   return resolver;
 }
