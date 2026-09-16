@@ -191,17 +191,19 @@ export function FileTreeSidebar({
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [files, setFiles] = useState<FileTreeEntry[]>([]);
   const [truncated, setTruncated] = useState(false);
-  // Loading is derived from the most recent committed fetch key, so a
-  // synchronous setLoading(true) inside the effect isn't required —
-  // see the same pattern in apps/landing for the rationale.
-  const fetchKey = `${reloadKey ?? ''}|${debouncedQuery}`;
-  const [committedKey, setCommittedKey] = useState<string | null>(null);
-  const loading = committedKey !== fetchKey;
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Mirror the provider in a ref so the load effect can see the
   // latest without making it a dep (provider identity is the
   // consumer's contract responsibility — see the comment in `Props`).
-  const { adapterRef: providerRef } = useAsyncAdapter(provider);
+  const { adapterRef: providerRef, reloadCount, reload } = useAsyncAdapter(provider);
+  // Loading is derived from the most recent committed fetch key, so a
+  // synchronous setLoading(true) inside the effect isn't required —
+  // see the same pattern in apps/landing for the rationale. reloadCount
+  // is part of the key so a Retry re-enters the loading state too.
+  const fetchKey = `${reloadKey ?? ''}|${debouncedQuery}|${reloadCount}`;
+  const [committedKey, setCommittedKey] = useState<string | null>(null);
+  const loading = committedKey !== fetchKey;
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQuery(query.trim()), 200);
@@ -216,10 +218,12 @@ export function FileTreeSidebar({
           if (isCancelled()) return;
           setFiles(payload.files);
           setTruncated(payload.truncated);
-        } catch {
+          setError(null);
+        } catch (cause: unknown) {
           if (isCancelled()) return;
           setFiles([]);
           setTruncated(false);
+          setError(cause instanceof Error ? cause.message : 'Unable to load workspace files.');
         }
         setCommittedKey(fetchKey);
       }),
@@ -250,13 +254,29 @@ export function FileTreeSidebar({
           </div>
         )}
       </div>
+      {error ? (
+        <div
+          role="alert"
+          className="flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 border-b border-rose-500/30"
+        >
+          <span className="flex-1 text-[11px] text-rose-200">{error}</span>
+          <button
+            type="button"
+            onClick={reload}
+            aria-label="Retry loading workspace files"
+            className="text-[12px] font-semibold text-violet-300 hover:text-violet-200 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
       <div className="flex-1 overflow-auto py-1">
         {loading && files.length === 0 ? (
           <div className="text-center text-gray-500 text-[11px] py-8">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse mr-1.5" />
             Loading workspace…
           </div>
-        ) : files.length === 0 ? (
+        ) : error && files.length === 0 ? null : files.length === 0 ? (
           <div className="text-center text-gray-500 text-[11px] py-8">
             {query ? 'No files match.' : 'No files found.'}
           </div>
