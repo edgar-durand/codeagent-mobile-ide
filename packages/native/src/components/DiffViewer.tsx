@@ -20,6 +20,12 @@ interface Props {
   git: GitProvider;
   fetcher: FileFetcher;
   staged?: boolean;
+  /**
+   * Header badge. Omitted → "STAGED" / "WORKING TREE" from `staged`; a string
+   * replaces it (e.g. "PR #212" — a pull-request diff is neither); `null`
+   * hides it.
+   */
+  badge?: string | null;
   onClose?: () => void;
 }
 
@@ -40,7 +46,8 @@ interface DiffState {
  * viewports because Monaco's DiffEditor handles the rebreak
  * automatically when its renderer detects the available width.
  */
-export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
+export function DiffViewer({ path, git, fetcher, staged, badge, onClose }: Props) {
+  const badgeText = badge === undefined ? (staged ? 'STAGED' : 'WORKING TREE') : badge;
   const theme = useIDETheme();
   const generationRef = useRef(0);
   const [readyGeneration, setReadyGeneration] = useState<number | undefined>(undefined);
@@ -119,9 +126,11 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
           {path}
         </Text>
         <View style={styles.headerRight}>
-          <View style={styles.stagedBadge}>
-            <Text style={styles.stagedBadgeText}>{staged ? 'STAGED' : 'WORKING TREE'}</Text>
-          </View>
+          {badgeText ? (
+            <View style={styles.stagedBadge}>
+              <Text style={styles.stagedBadgeText}>{badgeText}</Text>
+            </View>
+          ) : null}
           {onClose ? (
             <Pressable
               onPress={onClose}
