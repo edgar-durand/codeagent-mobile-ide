@@ -6,6 +6,12 @@ are generated automatically from the [Conventional Commits](https://www.conventi
 between release tags via the [Release](../../.github/workflows/release.yml)
 workflow.
 
+## [0.14.0] — 2026-09-27
+
+### Added
+
+- **native:** Optional header badge on the diff viewer (web too) (#3)
+
 ## [0.13.0] — 2026-09-16
 
 ### Added
