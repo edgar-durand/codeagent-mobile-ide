@@ -18,6 +18,12 @@ interface Props {
   /** When `true`, diff the staged version vs HEAD instead of
    * working-tree vs HEAD. */
   staged?: boolean;
+  /**
+   * Header badge. Omitted → "STAGED" / "WORKING TREE" from `staged`; a string
+   * replaces it (e.g. "PR #212" — a pull-request diff is neither); `null`
+   * hides it.
+   */
+  badge?: string | null;
   /** Close button handler (rendered top-right when supplied). */
   onClose?: () => void;
 }
@@ -47,7 +53,8 @@ interface DiffState {
  * specially; for those the viewer renders the raw diff text in a
  * read-only Monaco buffer.
  */
-export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
+export function DiffViewer({ path, git, fetcher, staged, badge, onClose }: Props) {
+  const badgeText = badge === undefined ? (staged ? 'STAGED' : 'WORKING TREE') : badge;
   const [state, setState] = useState<DiffState>({
     loading: true,
     error: null,
@@ -98,7 +105,7 @@ export function DiffViewer({ path, git, fetcher, staged, onClose }: Props) {
     <div className="flex-1 flex flex-col min-w-0 bg-[#0d1117]">
       <div className="flex items-center justify-between px-3 py-1 bg-[#161b22] border-b border-gray-800/60 text-[11px]">
         <span className="font-mono text-gray-300 truncate flex-1">
-          {path} <span className="text-gray-500 ml-2">{staged ? 'STAGED' : 'WORKING TREE'}</span>
+          {path} {badgeText ? <span className="text-gray-500 ml-2">{badgeText}</span> : null}
         </span>
         {onClose ? (
           <button
